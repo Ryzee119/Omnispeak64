@@ -1,0 +1,8 @@
+_keen_data
+libdragon
+*.vscode
+*.bin
+*.dfs
+*.elf
+*.z64
+*.o

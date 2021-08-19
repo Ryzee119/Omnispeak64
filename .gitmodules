@@ -1,0 +1,3 @@
+[submodule "omnispeak"]
+	path = omnispeak
+	url = https://github.com/sulix/omnispeak.git
