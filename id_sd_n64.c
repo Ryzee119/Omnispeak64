@@ -1,6 +1,7 @@
 /*
 Omnispeak: A Commander Keen Reimplementation
 Copyright (C) 2018 Omnispeak Authors
+Copyright (C) 2021 Ryan Wendland (Libdragon N64 port)
 
 This program is free software; you can redistribute it and/or
 modify it under the terms of the GNU General Public License
@@ -37,7 +38,7 @@ static int16_t *stream = NULL;
 static const int BITRATE = 9600;
 static bool SD_N64_IsLocked = false;
 
-//Timing backend for the gamelogic uses the sound system
+//Timing backend for the gamelogic which uses the sound system
 static timer_link_t *t0_timer;
 void SDL_t0Service(void);
 
@@ -70,19 +71,34 @@ void SD_N64_alOut(uint8_t reg, uint8_t val)
     OPL3_WriteReg(&nuked_oplChip, reg, val);
     if (audio_can_write() && generate_stream)
     {
-        OPL3_GenerateStream(&nuked_oplChip, stream, audio_get_buffer_length() / 2);
+        OPL3_GenerateStream(&nuked_oplChip, stream, audio_get_buffer_length());
         generate_stream = false;
     }
 }
 
+//Create a sine lookup table to speed up the sine generation. 100 positions should be reasonably accurate
+//for what we're doing here.
+static const int16_t sin_lookup[] = {
+0,2057,4107,6140,8149,10126,12062,13952,15786,17557,19260,20886,22431,23886,25247,
+26509,27666,28714,29648,30466,31163,31738,32187,32509,32702,32767,32702,32509,32187,
+31738,31163,30466,29648,28714,27666,26509,25247,23886,22431,20886,19260,17557,15786,
+13952,12062,10126,8149,6140,4107,2057,0,
+-2057,-4107,-6140,-8149,-10126,-12062,-13952,-15786,-17557,-19260,-20886,-22431,-23886,
+-25247,-26509,-27666,-28714,-29648,-30466,-31163,-31738,-32187,-32509,-32702,-32767,-32702,
+-32509,-32187,-31738,-31163,-30466,-29648,-28714,-27666,-26509,-25247,-23886,-22431,-20886,
+-19260,-17557,-15786,-13952,-12062,-10126,-8149,-6140,-4107,-2057,0,
+};
+
 void SD_N64_PCSpkOn(bool on, int freq)
 {
     //Fill the stream with a 16 bit interlaced stereo PCM waveform at the required frequency
-    for (int i = 0; i < (audio_get_buffer_length * 2); i += 2)
+    //audio_get_buffer_length() returns the number of stereo samples. I mix it onto both channels.
+    const int lookup_len = sizeof(sin_lookup) / sizeof(sin_lookup[0]);
+    for (int i = 0; i < (audio_get_buffer_length() * 2); i += 2)
     {
-        int sinus = 0.8 * 0x8000 * sin((2 * 3.1415f * freq) * i / BITRATE / 2);
-        stream[i + 0] = CK_Cross_SwapLE16(sinus & 0xFFFF);
-        stream[i + 1] = CK_Cross_SwapLE16(sinus & 0xFFFF);
+	int index = (freq / BITRATE * i / 2 * lookup_len) % lookup_len;
+        stream[i + 0] = sin_lookup[index];
+        stream[i + 1] = sin_lookup[index];
     }
 }
 
