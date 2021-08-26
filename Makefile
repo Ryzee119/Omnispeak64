@@ -33,6 +33,7 @@ $(PROG_NAME).elf: \
 	id_sd_n64.o \
 	id_vl_n64.o \
 	id_fs_n64.o \
+	n64_rdp/RdpDisplayList.o \
 	omnispeak/src/ck_act.o \
 	omnispeak/src/ck_cross.o \
 	omnispeak/src/ck_game.o \

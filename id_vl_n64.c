@@ -1,3 +1,4 @@
+
 #include "id_sd.h"
 #include "id_us.h"
 #include "id_vl.h"
@@ -5,19 +6,35 @@
 
 #include "ck_cross.h"
 
+#include "n64_rdp/RdpDisplayList.h"
+#include "n64_rdp/RdpCommands.h"
+extern void *__safe_buffer[];
+#define __get_buffer( x ) (pixel_t *)__safe_buffer[(x)-1]
+#define rdl_push(rdl) (rdl->cursor++)
+
 #include <stdlib.h>
+#include <malloc.h>
 #include <string.h>
 #include <libdragon.h>
 
+
+#define USE_HW_RENDERER
+
 static display_context_t disp = 0;
-sprite_t *staging_sprite;
+static const size_t FRAMEBUFFER_SIZE = (VL_EGAVGA_GFX_WIDTH * VL_EGAVGA_GFX_HEIGHT * 2);
+
 static int vl_n64_screenWidth;
 static int vl_n64_screenHeight;
 
-/* TODO (Overscan border):
- * - If a texture is used for offscreen rendering with scaling applied later,
- * it's better to have the borders within the texture itself.
- */
+#ifdef USE_HW_RENDERER
+RdpDisplayList * rdl = NULL;
+Surface framebuffer;
+Surface blitbuffer;
+Rect rect1;
+Rect rect2;
+#else
+sprite_t *staging_sprite;
+#endif
 
 typedef struct VL_N64_Surface
 {
@@ -33,16 +50,39 @@ static void VL_N64_SetVideoMode(int mode)
         vl_n64_screenWidth = VL_EGAVGA_GFX_WIDTH;
         vl_n64_screenHeight = VL_EGAVGA_GFX_HEIGHT;
         init_interrupts();
-        display_init(RESOLUTION_320x240, DEPTH_16_BPP, 2, GAMMA_NONE, ANTIALIAS_RESAMPLE );
-        staging_sprite = malloc(sizeof(sprite_t) + (VL_EGAVGA_GFX_WIDTH * VL_EGAVGA_GFX_HEIGHT * 2));
+        display_init(RESOLUTION_320x240, DEPTH_16_BPP, 2, GAMMA_NONE, ANTIALIAS_RESAMPLE);
+#ifndef USE_HW_RENDERER
+        staging_sprite = malloc(sizeof(sprite_t) + FRAMEBUFFER_SIZE);
         staging_sprite->bitdepth = 2;
         staging_sprite->width = VL_EGAVGA_GFX_WIDTH;
         staging_sprite->height = VL_EGAVGA_GFX_HEIGHT;
         staging_sprite->hslices = 1;
         staging_sprite->vslices = 1;
-        rdp_init();
-        while (!(disp = display_lock()))
-            ;
+#else
+        rdl_init();
+        rdl = rdl_alloc(1024);
+#endif
+        while (!(disp = display_lock()));
+        framebuffer.pixels = __get_buffer(disp);
+        framebuffer.width = VL_EGAVGA_GFX_WIDTH;
+	    framebuffer.height = VL_EGAVGA_GFX_HEIGHT;
+
+        blitbuffer.width = VL_EGAVGA_GFX_WIDTH / 2;
+        blitbuffer.height = VL_EGAVGA_GFX_HEIGHT / 2;
+        blitbuffer.pixels = (pixel_t *)memalign(64, blitbuffer.width * blitbuffer.height * 2);
+
+        rect1.left = 0;
+        rect1.top = 0;
+        rect1.right = framebuffer.width;
+        rect1.bottom = framebuffer.height;
+
+        rect2.left = 0;
+        rect2.top = 0;
+        rect2.right = blitbuffer.width;
+        rect2.bottom = blitbuffer.height;
+
+        memset(framebuffer.pixels, 0x00, FRAMEBUFFER_SIZE);
+        memset(blitbuffer.pixels, 0x2, blitbuffer.width * blitbuffer.height * 2);
     }
     else
     {
@@ -85,6 +125,10 @@ static void VL_N64_GetSurfaceDimensions(void *surface, int *w, int *h)
 
 static void VL_N64_RefreshPaletteAndBorderColor(void *screen)
 {
+    //Set pallete to Tile ID 1, TLUT0.
+    *rdl_push(rdl) = RdpSetOtherModes(SOM_CYCLE_COPY | SOM_ENABLE_TLUT_RGB16);
+    *rdl_push(rdl) = MRdpLoadPalette16(2, (uint32_t)VL_EGARGBColorTable, RDP_AUTO_TMEM_SLOT(0));
+    *rdl_push(rdl) = RdpSyncTile();
 }
 
 static int VL_N64_SurfacePGet(void *surface, int x, int y)
@@ -245,6 +289,9 @@ static void VL_N64_ScrollSurface(void *surface, int x, int y)
     VL_N64_SurfaceToSelf(surface, dx, dy, sx, sy, w, h);
 }
 
+const pixel_t white = 0xFFFF;
+const pixel_t black = 0x0001;
+
 static void VL_N64_Present(void *surface, int scrlX, int scrlY, bool singleBuffered)
 {
     VL_N64_Surface *src = (VL_N64_Surface *)surface;
@@ -254,7 +301,39 @@ static void VL_N64_Present(void *surface, int scrlX, int scrlY, bool singleBuffe
     //    debugf("%02x ", src->data[i]);
     //}
     //debugf("\n");
+#ifdef USE_HW_RENDERER
+    
 
+    int blit_x = (framebuffer.width / 2) - (blitbuffer.width / 2);
+    int blit_y = (framebuffer.height / 2) - (blitbuffer.height / 2);
+
+    /*
+    rdl_attach_surface(rdl, &blitbuffer);
+    rdl_fillrect(rdl, &rect2, black);
+
+    rdl_attach_surface(rdl, &framebuffer);
+    rdl_fillrect(rdl, &rect1, white);
+    rdl_blit(rdl, &blitbuffer, NULL, blit_x, blit_y, true);
+    rdl_finish(rdl);
+    display_show(disp);
+    */
+    rdl_attach_surface(rdl, &framebuffer);
+
+    *rdl_push(rdl) = RdpSetOtherModes(SOM_CYCLE_COPY | SOM_ENABLE_TLUT_RGB16 | SOM_ALPHA_COMPARE);
+    *rdl_push(rdl) = RdpSyncPipe();
+    *rdl_push(rdl) = MRdpLoadPalette16(0, (uint32_t)VL_EGARGBColorTable, RDP_AUTO_TMEM_SLOT(0));
+    *rdl_push(rdl) = RdpSyncTile();
+
+    *rdl_push(rdl) = MRdpLoadTex8bpp(0, (uint32_t)blitbuffer.pixels, 48, 48, 1, RDP_AUTO_TMEM_SLOT(1), 1);
+    *rdl_push(rdl) = RdpTextureRectangle1I(1, 1, 1, 48, 48);
+    *rdl_push(rdl) = RdpTextureRectangle2I(0, 0, 4, 1);
+    rdl_finish(rdl);
+    display_show(disp);
+
+    while (!(disp = display_lock())) {}
+	framebuffer.pixels = __get_buffer(disp);
+
+#else
     uint16_t *dest = (uint16_t *)staging_sprite->data;
     for (int _y = scrlY; _y < scrlY + src->h; _y++)
     {
@@ -281,6 +360,7 @@ static void VL_N64_Present(void *surface, int scrlX, int scrlY, bool singleBuffe
     display_show(disp);
     while (!(disp = display_lock()))
         ;
+#endif
 }
 
 void VL_N64_FlushParams()
