@@ -18,10 +18,10 @@ along with this program; if not, write to the Free Software
 Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  */
 
-#include "id_in.h"
-
 #include <string.h>
 #include <libdragon.h>
+
+#include "id_in.h"
 
 void IN_N64_PumpEvents()
 {
@@ -85,9 +85,9 @@ bool IN_N64_JoyPresent(int joystick)
 {
     int controllers = get_controllers_present();
     int mask = (joystick == 0) ? CONTROLLER_1_INSERTED :
-                    (joystick == 1) ? CONTROLLER_2_INSERTED :
-                    (joystick == 2) ? CONTROLLER_3_INSERTED :
-                    (joystick == 3) ? CONTROLLER_4_INSERTED : 0;
+               (joystick == 1) ? CONTROLLER_2_INSERTED :
+               (joystick == 2) ? CONTROLLER_3_INSERTED :
+               (joystick == 3) ? CONTROLLER_4_INSERTED : 0;
 
     return ((controllers & mask) > 0);
 }
@@ -96,8 +96,9 @@ void IN_N64_JoyGetAbs(int joystick, int *x, int *y)
 {
     struct controller_data keys = get_keys_pressed();
     int x_val = keys.c[joystick].x * 256;
-    int y_val = -keys.c[joystick].y * 255;
-   
+    int y_val = -keys.c[joystick].y * 256 - 1;
+
+    //Map d-pad to analog stick too
     switch (get_dpad_direction(joystick))
     {
         case 0:
@@ -144,7 +145,7 @@ uint16_t IN_N64_JoyGetButtons(int joystick)
 {
     uint16_t mask = 0;
     struct controller_data keys = get_keys_pressed();
-    if (IN_N64_JoyPresent(joystick) == false)
+    if (IN_N64_JoyPresent(joystick) == false || keys.c[joystick].err)
     {
         return mask;
     }
@@ -178,8 +179,8 @@ static IN_Backend in_n64_backend = {
     .joyGetAbs = IN_N64_JoyGetAbs,
     .joyGetButtons = IN_N64_JoyGetButtons,
     .joyGetName = IN_N64_JoyGetName,
-    .joyAxisMin = -1000,
-    .joyAxisMax = 1000,
+    .joyAxisMin = -32767,
+    .joyAxisMax = 32768,
 };
 
 IN_Backend *IN_Impl_GetBackend()
