@@ -29,134 +29,109 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #include "id_sd.h"
 #include "ck_cross.h"
 
-opl3_chip nuked_oplChip;
-
 #define PC_PIT_RATE 1193182
 #define SD_SFX_PART_RATE 140
-/* In the original exe, upon setting a rate of 140Hz or 560Hz for some
- * interrupt handler, the value 1192030 divided by the desired rate is
- * calculated, to be programmed for timer 0 as a consequence.
- * For THIS value, it is rather 1193182 that should be divided by it, in order
- * to obtain a better approximation of the actual rate.
- */
 #define SD_SOUND_PART_RATE_BASE 1192030
 
-// Sort of replacements for x86 behaviors and assembly code
+static int16_t *stream = NULL;
+static const int BITRATE = 9600;
+static bool SD_N64_IsLocked = false;
 
-static bool SD_N64_AudioSubsystem_Up;
-
-timer_link_t *t0_timer;
+//Timing backend for the gamelogic uses the sound system
+static timer_link_t *t0_timer;
 void SDL_t0Service(void);
 
+//OPL (for Adlib backend)
+static opl3_chip nuked_oplChip;
+static bool SD_N64_AudioSubsystem_Up = false;
+static bool generate_stream = false;
+
+//Audio interrupts
 static void _t0service(int ovfl)
 {
-	SDL_t0Service();
+    SDL_t0Service();
 }
 
-/* NEVER call this from the SDL callback!!! (Or you want a deadlock?) */
+static void _audio_callback(short *buffer, size_t numsamples)
+{
+    memcpy(buffer, stream, numsamples * 2);
+}
+
 void SD_N64_SetTimer0(int16_t int_8_divisor)
 {
+    //Create an interrupt that occurs at a certain frequency.
     uint16_t ints_per_sec = SD_SOUND_PART_RATE_BASE / int_8_divisor;
     delete_timer(t0_timer);
     t0_timer = new_timer(TIMER_TICKS(1000000/ints_per_sec), TF_CONTINUOUS, _t0service);
-    if (!t0_timer)
-    {
-        debugf("Error creating timer\n");
-    }
-}
-
-int16_t *stream;
-bool generate_stream = false;
-int pc_spkr_freq = 0;
-/* FIXME: The SDL prefix may conflict with SDL functions in the future(???)
- * Best (but hackish) solution, if it happens: Add our own custom prefix.
- */
-
-static void audio_callback(short *buffer, size_t numsamples)
-{
-    memcpy(buffer, stream, numsamples);
 }
 
 void SD_N64_alOut(uint8_t reg, uint8_t val)
 {
-    //OPL3_WriteReg(&nuked_oplChip, reg, val);
-    //if (audio_can_write() && generate_stream)
-    //{
-        //OPL3_GenerateStream(&nuked_oplChip, stream, audio_get_buffer_length() / 2);
-        //generate_stream = false;
-    //}
-}
-
-static void create_sine(int sample_rate, int freq, int num_samples, uint16_t *stream)
-{
-    for (int i = 0; i < num_samples; i += 2)
+    OPL3_WriteReg(&nuked_oplChip, reg, val);
+    if (audio_can_write() && generate_stream)
     {
-        // amplitude = 0.8 * max range; max range = 0x8000 = 32768 ( max value for 16 Bit signed int )
-        int sinus = .5 * 0x8000 * sin((2 * 3.1415f * freq) * i / sample_rate / 2);
-        stream[i + 0] = CK_Cross_SwapLE16(sinus & 0xFFFF);
-        stream[i + 1] = CK_Cross_SwapLE16(sinus & 0xFFFF);
+        OPL3_GenerateStream(&nuked_oplChip, stream, audio_get_buffer_length() / 2);
+        generate_stream = false;
     }
 }
 
 void SD_N64_PCSpkOn(bool on, int freq)
 {
-    //if (on)
-    //    pc_spkr_freq = freq;
-    //else
-    //    pc_spkr_freq = 0;
-    static int i = 0;
-    if (!i)
-        create_sine(9600, 1000, audio_get_buffer_length(), stream);
-    
-    if (i ==0)
-        i = 1;
-    if (i == 1)
+    //Fill the stream with a 16 bit interlaced stereo PCM waveform at the required frequency
+    for (int i = 0; i < (audio_get_buffer_length * 2); i += 2)
     {
-        for (int j = 0; j < 64; j++)
-        {
-            fprintf(stderr, "%d\n", stream[j]);
-        }
-        fprintf(stderr, "\r\n");
+        int sinus = 0.8 * 0x8000 * sin((2 * 3.1415f * freq) * i / BITRATE / 2);
+        stream[i + 0] = CK_Cross_SwapLE16(sinus & 0xFFFF);
+        stream[i + 1] = CK_Cross_SwapLE16(sinus & 0xFFFF);
     }
-    i = 2;
 }
 
 void SD_N64_Startup(void)
 {
-    SD_N64_AudioSubsystem_Up = true;
-    //OPL3_Reset(&nuked_oplChip, 9600);
-    audio_init(9600, 2);
-    stream = malloc(audio_get_buffer_length() * 2);
+    if (SD_N64_AudioSubsystem_Up)
+    {
+        return;     
+    }
+    audio_init(BITRATE, 2);
+    OPL3_Reset(&nuked_oplChip, BITRATE);
+    stream = malloc(2  * sizeof(short) * audio_get_buffer_length());
     memset(stream, 0x00, audio_get_buffer_length() * 2);
-    audio_write_silence();
-    audio_write_silence();
-    audio_set_buffer_callback(&audio_callback);
+    audio_set_buffer_callback(&_audio_callback);
     init_interrupts();
     timer_init();
     t0_timer = NULL;
+    SD_N64_AudioSubsystem_Up = true;
 }
 
 void SD_N64_Shutdown(void)
 {
     if (SD_N64_AudioSubsystem_Up)
     {
+	free(stream);
+	audio_close();
         SD_N64_AudioSubsystem_Up = false;
     }
 }
 
-bool SD_N64_IsLocked = false;
-
 void SD_N64_Lock()
 {
     if (SD_N64_IsLocked)
+    {
         CK_Cross_LogMessage(CK_LOG_MSG_ERROR, "Tried to lock the audio system when it was already locked!\n");
+        return;
+    }
+    audio_pause(true);
     SD_N64_IsLocked = true;
 }
 
 void SD_N64_Unlock()
 {
     if (!SD_N64_IsLocked)
+    {
         CK_Cross_LogMessage(CK_LOG_MSG_ERROR, "Tried to unlock the audio system when it was already unlocked!\n");
+	return;
+    }
+    audio_pause(false);
     SD_N64_IsLocked = false;
 }
 
