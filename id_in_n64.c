@@ -30,11 +30,12 @@ void IN_N64_PumpEvents()
     //There's a few joystick buttons that need to be injected as keypressed
     struct controller_data keys;
     keys = get_keys_down();
+
+    if(keys.c[0].err) return;
+
     if (keys.c[0].start)   IN_HandleKeyDown(IN_SC_Escape, 0);
     //Any of these will trigger to status menu
     if (keys.c[0].L)       IN_HandleKeyDown(IN_SC_Enter, 0);
-    if (keys.c[0].L)       IN_HandleKeyDown(IN_SC_Enter, 0);
-    if (keys.c[0].R)       IN_HandleKeyDown(IN_SC_Enter, 0);
     if (keys.c[0].C_up)    IN_HandleKeyDown(IN_SC_Enter, 0);
     if (keys.c[0].C_down)  IN_HandleKeyDown(IN_SC_Enter, 0);
     if (keys.c[0].C_left)  IN_HandleKeyDown(IN_SC_Enter, 0);
@@ -46,7 +47,6 @@ void IN_N64_PumpEvents()
     keys = get_keys_up();
     if (keys.c[0].start)   IN_HandleKeyUp(IN_SC_Escape, 0);
     if (keys.c[0].L)       IN_HandleKeyUp(IN_SC_Enter, 0);
-    if (keys.c[0].R)       IN_HandleKeyUp(IN_SC_Enter, 0);
     if (keys.c[0].C_up)    IN_HandleKeyUp(IN_SC_Enter, 0);
     if (keys.c[0].C_down)  IN_HandleKeyUp(IN_SC_Enter, 0);
     if (keys.c[0].C_left)  IN_HandleKeyUp(IN_SC_Enter, 0);
@@ -149,12 +149,13 @@ uint16_t IN_N64_JoyGetButtons(int joystick)
     {
         return mask;
     }
-    if (keys.c[joystick].A)       mask |= (1 << IN_joy_pogo);
+
+    if (keys.c[joystick].A)       mask |= (1 << IN_joy_jump);
     if (keys.c[joystick].B)       mask |= (1 << IN_joy_fire);
     if (keys.c[joystick].start)   mask |= (1 << IN_joy_menu);
     if (keys.c[joystick].Z)       mask |= (1 << IN_joy_fire);
+    if (keys.c[joystick].R)       mask |= (1 << IN_joy_pogo);
     if (keys.c[joystick].L)       mask |= (1 << IN_joy_status);
-    if (keys.c[joystick].R)       mask |= (1 << IN_joy_status);
     if (keys.c[joystick].C_up)    mask |= (1 << IN_joy_status);
     if (keys.c[joystick].C_down)  mask |= (1 << IN_joy_status);
     if (keys.c[joystick].C_left)  mask |= (1 << IN_joy_status);

@@ -35,7 +35,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #define SD_SOUND_PART_RATE_BASE 1192030
 
 static int16_t *stream = NULL;
-static const int BITRATE = 9600;
+static const int BITRATE = 44100;
 static bool SD_N64_IsLocked = false;
 
 //Timing backend for the gamelogic which uses the sound system
@@ -63,7 +63,7 @@ void SD_N64_SetTimer0(int16_t int_8_divisor)
     //Create an interrupt that occurs at a certain frequency.
     uint16_t ints_per_sec = SD_SOUND_PART_RATE_BASE / int_8_divisor;
     delete_timer(t0_timer);
-    t0_timer = new_timer(TIMER_TICKS(1000000/ints_per_sec), TF_CONTINUOUS, _t0service);
+    t0_timer = new_timer(TIMER_TICKS(1000000 / ints_per_sec), TF_CONTINUOUS, _t0service);
 }
 
 void SD_N64_alOut(uint8_t reg, uint8_t val)
@@ -86,32 +86,53 @@ static const int16_t sin_lookup[] = {
 -2057,-4107,-6140,-8149,-10126,-12062,-13952,-15786,-17557,-19260,-20886,-22431,-23886,
 -25247,-26509,-27666,-28714,-29648,-30466,-31163,-31738,-32187,-32509,-32702,-32767,-32702,
 -32509,-32187,-31738,-31163,-30466,-29648,-28714,-27666,-26509,-25247,-23886,-22431,-20886,
--19260,-17557,-15786,-13952,-12062,-10126,-8149,-6140,-4107,-2057,0,
+-19260,-17557,-15786,-13952,-12062,-10126,-8149,-6140,-4107,-2057,
 };
 
 void SD_N64_PCSpkOn(bool on, int freq)
 {
+    if (!on || freq == 0)
+    {
+        memset(stream, 0x00, 2 * sizeof(short) * audio_get_buffer_length());
+        return;
+    }
+
+    //Keep track of the current index position from previous call for a smoother sine.
+    static int running_val = 0;
+
     //Fill the stream with a 16 bit interlaced stereo PCM waveform at the required frequency
     //audio_get_buffer_length() returns the number of stereo samples. I mix it onto both channels.
     const int lookup_len = sizeof(sin_lookup) / sizeof(sin_lookup[0]);
+    int hz = SD_SOUND_PART_RATE_BASE / freq;
     for (int i = 0; i < (audio_get_buffer_length() * 2); i += 2)
     {
-	int index = (freq / BITRATE * i / 2 * lookup_len) % lookup_len;
+#ifdef SND_USE_LOOKUP
+        int index = ((hz * lookup_len / BITRATE * i / 2) + running_val) % lookup_len;
         stream[i + 0] = sin_lookup[index];
         stream[i + 1] = sin_lookup[index];
+#else
+        int sinus = 0.8 * 0x8000 * sin((2 * M_PI * hz) * (i + running_val) / BITRATE / 2);
+        stream[i + 0] = sinus & 0xFFFF;
+        stream[i + 1] = sinus & 0xFFFF;
+#endif
+
+        running_val = (running_val + 1) % lookup_len;
     }
+    debugf("run: %d\n", freq);
 }
 
 void SD_N64_Startup(void)
 {
     if (SD_N64_AudioSubsystem_Up)
     {
-        return;     
+        return;
     }
     audio_init(BITRATE, 2);
     OPL3_Reset(&nuked_oplChip, BITRATE);
-    stream = malloc(2  * sizeof(short) * audio_get_buffer_length());
-    memset(stream, 0x00, 2  * sizeof(short) * audio_get_buffer_length());
+    stream = malloc(2 * sizeof(short) * audio_get_buffer_length());
+    memset(stream, 0x00, 2 * sizeof(short) * audio_get_buffer_length());
+    audio_write_silence();
+    audio_write_silence();
     audio_set_buffer_callback(&_audio_callback);
     init_interrupts();
     timer_init();
@@ -123,8 +144,8 @@ void SD_N64_Shutdown(void)
 {
     if (SD_N64_AudioSubsystem_Up)
     {
-	free(stream);
-	audio_close();
+        free(stream);
+        audio_close();
         SD_N64_AudioSubsystem_Up = false;
     }
 }
@@ -145,7 +166,7 @@ void SD_N64_Unlock()
     if (!SD_N64_IsLocked)
     {
         CK_Cross_LogMessage(CK_LOG_MSG_ERROR, "Tried to unlock the audio system when it was already unlocked!\n");
-	return;
+        return;
     }
     audio_pause(false);
     SD_N64_IsLocked = false;
