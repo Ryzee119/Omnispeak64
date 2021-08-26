@@ -95,7 +95,7 @@ void SD_N64_Startup(void)
     audio_init(BITRATE, 2);
     OPL3_Reset(&nuked_oplChip, BITRATE);
     stream = malloc(2  * sizeof(short) * audio_get_buffer_length());
-    memset(stream, 0x00, audio_get_buffer_length() * 2);
+    memset(stream, 0x00, 2  * sizeof(short) * audio_get_buffer_length());
     audio_set_buffer_callback(&_audio_callback);
     init_interrupts();
     timer_init();
