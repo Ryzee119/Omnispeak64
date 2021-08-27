@@ -16,29 +16,24 @@
 static display_context_t disp = 0;
 static const size_t FRAMEBUFFER_SIZE = (VL_EGAVGA_GFX_WIDTH * VL_EGAVGA_GFX_HEIGHT * 2);
 
-#ifdef USE_HW_RENDERER
-
-#include "n64_rdp/RdpDisplayList.h"
-#include "n64_rdp/RdpCommands.h"
-extern void *__safe_buffer[];
-#define rdl_push(rdl) (rdl->cursor++)
-
-typedef VL_N64_Surface Surface;
-RdpDisplayList * rdl = NULL;
-VL_N64_Surface framebuffer;
-uint16_t *palette;
-
-#else
 typedef struct VL_N64_Surface
 {
     VL_SurfaceUsage use;
     int width, height;
     uint8_t *pixels;
 } VL_N64_Surface;
+
+#ifdef USE_HW_RENDERER
+#include "n64_rdp/RdpDisplayList.h"
+#include "n64_rdp/RdpCommands.h"
+extern void *__safe_buffer[];
+#define rdl_push(rdl) (rdl->cursor++)
+RdpDisplayList * rdl = NULL;
+VL_N64_Surface framebuffer;
+uint16_t *palette;
+#else
 sprite_t *staging_sprite;
 #endif
-
-
 
 static void VL_N64_SetVideoMode(int mode)
 {
@@ -58,7 +53,7 @@ static void VL_N64_SetVideoMode(int mode)
         rdl = rdl_alloc(1024);
 	framebuffer.width = VL_EGAVGA_GFX_WIDTH;
 	framebuffer.height = VL_EGAVGA_GFX_HEIGHT;
-	palette = memalign(64, sizeof(uint16_t) * 16);
+	palette = (uint16_t *)memalign(64, sizeof(uint16_t) * 16);
 	*rdl_push(rdl) = RdpSetOtherModes(SOM_CYCLE_COPY | SOM_ENABLE_TLUT_RGB16 | SOM_ALPHA_COMPARE);
         *rdl_push(rdl) = RdpSyncPipe();
 	rdl_finish(rdl);
@@ -76,7 +71,6 @@ static void VL_N64_SetVideoMode(int mode)
     }
 }
 
-static void VL_N64_SurfaceRect(void *dst_surface, int x, int y, int w, int h, int colour);
 static void *VL_N64_CreateSurface(int w, int h, VL_SurfaceUsage usage)
 {
     VL_N64_Surface *surf = (VL_N64_Surface *)malloc(sizeof(VL_N64_Surface));
@@ -284,9 +278,6 @@ static void VL_N64_ScrollSurface(void *surface, int x, int y)
     VL_N64_SurfaceToSelf(surface, dx, dy, sx, sy, w, h);
 }
 
-const pixel_t white = 0xFFFF;
-const pixel_t black = 0x0001;
-
 static void VL_N64_Present(void *surface, int scrlX, int scrlY, bool singleBuffered)
 {
     VL_N64_Surface *src = (VL_N64_Surface *)surface;
@@ -311,8 +302,8 @@ static void VL_N64_Present(void *surface, int scrlX, int scrlY, bool singleBuffe
     *rdl_push(rdl) = RdpSyncTile();
 
     //Load texture into TMEM into tile 0
-    memset(surface, 0x02, 16 * 16  * 2); //TEST!
-    *rdl_push(rdl) = MRdpLoadTex8bpp(0, (uint32_t)surface, 16, 16, RDP_AUTO_PITCH, RDP_AUTO_TMEM_SLOT(rdp_tex_slot), RDP_AUTO_PITCH);
+    memset(src->pixels, 0x02, 16 * 16  * 2); //TEST!
+    *rdl_push(rdl) = MRdpLoadTex8bpp(0, (uint32_t)src->pixels, 16, 16, RDP_AUTO_PITCH, RDP_AUTO_TMEM_SLOT(rdp_tex_slot), RDP_AUTO_PITCH);
     *rdl_push(rdl) = RdpSyncTile(),
 
     //Configure the tile descriptor
