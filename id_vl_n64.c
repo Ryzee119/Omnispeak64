@@ -13,9 +13,6 @@
 
 #define USE_HW_RENDERER
 
-static display_context_t disp = 0;
-static const size_t FRAMEBUFFER_SIZE = (VL_EGAVGA_GFX_WIDTH * VL_EGAVGA_GFX_HEIGHT * 2);
-
 typedef struct VL_N64_Surface
 {
     VL_SurfaceUsage use;
@@ -23,15 +20,18 @@ typedef struct VL_N64_Surface
     uint8_t *pixels;
 } VL_N64_Surface;
 
+static display_context_t disp = 0;
+
 #ifdef USE_HW_RENDERER
-#include "n64_rdp/RdpDisplayList.h"
-#include "n64_rdp/RdpCommands.h"
-extern void *__safe_buffer[];
-#define rdl_push(rdl) (rdl->cursor++)
-RdpDisplayList * rdl = NULL;
-VL_N64_Surface framebuffer;
+#include "n64_rdp/rdl.h"
+#include "n64_rdp/rdp_commands.h"
+#define NUM_DISPLAY_LISTS 3
+static RdpDisplayList *dls[NUM_DISPLAY_LISTS] = {NULL};
+static RdpDisplayList *dl;
 uint16_t *palette;
+uint8_t pal_slot = 0;
 #else
+static const size_t FRAMEBUFFER_SIZE = (VL_EGAVGA_GFX_WIDTH * VL_EGAVGA_GFX_HEIGHT * 2);
 sprite_t *staging_sprite;
 #endif
 
@@ -41,32 +41,40 @@ static void VL_N64_SetVideoMode(int mode)
     {
         init_interrupts();
         display_init(RESOLUTION_320x240, DEPTH_16_BPP, 2, GAMMA_NONE, ANTIALIAS_RESAMPLE);
-#ifndef USE_HW_RENDERER
+#ifdef USE_HW_RENDERER
+        rdp_init();
+        for (int i = 0; i < NUM_DISPLAY_LISTS; i++)
+        {
+            dls[i] = rdl_heap_alloc(2048);
+        }
+        for (int i = 0; i < NUM_DISPLAY_LISTS; i++)
+        {
+            rdl_reset(dls[i]);
+        }
+        dl = dls[0];
+        palette = (uint16_t *)memalign(64, sizeof(uint16_t) * 16);
+#else
         staging_sprite = malloc(sizeof(sprite_t) + FRAMEBUFFER_SIZE);
         staging_sprite->bitdepth = 2;
         staging_sprite->width = VL_EGAVGA_GFX_WIDTH;
         staging_sprite->height = VL_EGAVGA_GFX_HEIGHT;
         staging_sprite->hslices = 1;
         staging_sprite->vslices = 1;
-#else
-        rdl_init();
-        rdl = rdl_alloc(1024);
-	framebuffer.width = VL_EGAVGA_GFX_WIDTH;
-	framebuffer.height = VL_EGAVGA_GFX_HEIGHT;
-	palette = (uint16_t *)memalign(64, sizeof(uint16_t) * 16);
-	*rdl_push(rdl) = RdpSetOtherModes(SOM_CYCLE_COPY | SOM_ENABLE_TLUT_RGB16 | SOM_ALPHA_COMPARE);
-        *rdl_push(rdl) = RdpSyncPipe();
-	rdl_finish(rdl);
 #endif
+        
     }
     else
     {
-        display_close();
-#ifndef USE_HW_RENDERER
-	free(staging_sprite);
+#ifdef USE_HW_RENDERER
+        free(palette); //FIXME, free aligned memory?
+        for (int i = 0; i < NUM_DISPLAY_LISTS; i++)
+        {
+            rdl_free(dls[i]);
+        }
+        rdp_detach_display();
 #else
-	//free(palette); FIXME, free aligned memory?
-	rdl_free(rdl);
+        free(staging_sprite);
+        display_close();
 #endif
     }
 }
@@ -83,8 +91,8 @@ static void *VL_N64_CreateSurface(int w, int h, VL_SurfaceUsage usage)
 static void VL_N64_DestroySurface(void *surface)
 {
     VL_N64_Surface *surf = (VL_N64_Surface *)surface;
-    //if (surf->pixels)
-    //    free(surf->pixels); //FIXME free aligned memory?
+    if (surf->pixels)
+        free(surf->pixels); //FIXME free aligned memory?
     free(surf);
 }
 
@@ -105,6 +113,7 @@ static void VL_N64_GetSurfaceDimensions(void *surface, int *w, int *h)
 
 static void VL_N64_RefreshPaletteAndBorderColor(void *screen)
 {
+#ifdef USE_HW_RENDERER
     for (int i = 0; i < 16; i++)
     {
         uint8_t r = VL_EGARGBColorTable[vl_emuegavgaadapter.palette[i]][0];
@@ -114,10 +123,14 @@ static void VL_N64_RefreshPaletteAndBorderColor(void *screen)
         palette[i] = c;
     }
 
-    *rdl_push(rdl) = RdpSyncTile();
-    *rdl_push(rdl) = MRdpLoadPalette16(2, (uint32_t)palette, RDP_AUTO_TMEM_SLOT(0));
-    *rdl_push(rdl) = RdpSyncTile();
-    rdl_finish(rdl);
+    rdl_push(dl,
+             RdpSyncTile(),
+             MRdpLoadPalette16(2, (uint32_t)palette, RDP_AUTO_TMEM_SLOT(pal_slot)),
+             RdpSyncTile()
+        );
+
+    data_cache_hit_writeback_invalidate(palette, 16 * 2);
+#endif
 }
 
 static int VL_N64_SurfacePGet(void *surface, int x, int y)
@@ -282,47 +295,60 @@ static void VL_N64_Present(void *surface, int scrlX, int scrlY, bool singleBuffe
 {
     VL_N64_Surface *src = (VL_N64_Surface *)surface;
     //debugf("VL_N64_Present w: %d h: %d scrlx: %d scrly: %d\n", src->width, src->height, scrlX, scrlY);
-    //for (int i = 150; i < 300; i++)
-    //{
-    //    debugf("%02x ", src->pixels[i]);
-    //}
-    //debugf("\n");
     while (!(disp = display_lock())) {}
 #ifdef USE_HW_RENDERER
-    framebuffer.pixels = __safe_buffer[disp - 1];
-    rdp_set_clipping(0, 0, VL_EGAVGA_GFX_WIDTH, VL_EGAVGA_GFX_HEIGHT);
+    extern void *__safe_buffer[];
+    rdp_attach_display(disp);
+    rdp_set_clipping(0, 0, 320, 220);
+    rdl_push(dl,
+             RdpSyncPipe(),
+             // By default, go into COPY mode which is used by most sprites
+             RdpSetOtherModes(SOM_CYCLE_COPY | SOM_ALPHA_COMPARE | SOM_ENABLE_TLUT_RGB16),
+             // Setup combiner for texture output without lighting. We need 1-cycle
+             // mode for sprites with scaling or flipping, so the combiner must be
+             // configured.
+             RdpSetCombine(Comb1_Rgb(ZERO, ZERO, ZERO, TEX0), Comb1_Alpha(ZERO, ZERO, ZERO, TEX0)),
+             RdpSetBlendColor(0x0001) // alpha threshold value = 1
+    );
 
-    uint8_t pal_slot = 0;
-    uint8_t rdp_tex_slot = 0;
-    rdl_attach_surface(rdl, &framebuffer);
+    int rdp_tex_slot = 0;
+    int current_y = 0;
+    int y_per_loop = 4;
+    int x_per_loop = src->width;
+    int chunk_size = x_per_loop * y_per_loop;
+    assert(chunk_size <= 2048);
+    data_cache_hit_writeback_invalidate(src->pixels,  src->width * src->height);
+    for(int i = 0; i < ((src->width * src->height) / chunk_size); i++)
+    {
+        rdl_push(dl,
+                MRdpLoadTex8bpp(0, (uint32_t)src->pixels + (chunk_size * i), x_per_loop, y_per_loop, x_per_loop, RDP_AUTO_TMEM_SLOT(rdp_tex_slot), RDP_AUTO_PITCH),
+                MRdpSetTile8bpp(1, RDP_AUTO_TMEM_SLOT(rdp_tex_slot), RDP_AUTO_PITCH, RDP_AUTO_TMEM_SLOT(pal_slot), x_per_loop, y_per_loop)
+        );
+        int sw = x_per_loop, sh = y_per_loop;
+        int x0 = 0, y0 = current_y;//CK_Cross_max(0, current_y - scrlY);
+        rdl_push(dl,
+                RdpTextureRectangle1I(1, x0, y0, x0 + sw - 1, y0 + sh - 1),
+                RdpTextureRectangle2I(0, 0, 4, 1)
+        );
+        current_y += y_per_loop;
+    }
 
-    //Load palette (FIXME: Can probably be removed as it happens in palette refresh
-    *rdl_push(rdl) = RdpSyncTile();
-    *rdl_push(rdl) = MRdpLoadPalette16(2, (uint32_t)palette, RDP_AUTO_TMEM_SLOT(pal_slot));
-    *rdl_push(rdl) = RdpSyncTile();
+    rdl_flush(dl);
+    rdl_exec(dl);
+    for (int i = 0; i < NUM_DISPLAY_LISTS; i++)
+    {
+        if (dl == dls[i])
+        {
+            dl = dls[i + 1 == NUM_DISPLAY_LISTS ? 0 : i + 1];
+            break;
+        }
+    }
+    rdl_reset(dl);
 
-    //Load texture into TMEM into tile 0
-    memset(src->pixels, 0x02, 16 * 16  * 2); //TEST!
-    *rdl_push(rdl) = MRdpLoadTex8bpp(0, (uint32_t)src->pixels, 16, 16, RDP_AUTO_PITCH, RDP_AUTO_TMEM_SLOT(rdp_tex_slot), RDP_AUTO_PITCH);
-    *rdl_push(rdl) = RdpSyncTile(),
-
-    //Configure the tile descriptor
-    *rdl_push(rdl) = MRdpSetTile8bpp(1, RDP_AUTO_TMEM_SLOT(rdp_tex_slot), RDP_AUTO_PITCH, RDP_AUTO_TMEM_SLOT(pal_slot), 16, 16);
-
-    //Draw the texture
-    *rdl_push(rdl) = RdpTextureRectangle1I(1, 1, 1, (1+16-1), (1+16-1));
-    *rdl_push(rdl) = RdpTextureRectangle2I(0, 0, 4, 1);
-
-    //Execute the commands
-    rdl_finish(rdl);
-
-    //Put it on the screen
     rdp_detach_display();
-    display_show(disp);
-    disp = 0;
 #else
-    uint16_t *dest = (uint16_t *)staging_sprite->pixels;
-    for (int _y = scrlY; _y < scrlY + src->heighth; _y++)
+    uint16_t *dest = (uint16_t *)staging_sprite->data;
+    for (int _y = scrlY; _y < scrlY + src->height; _y++)
     {
         if (_y >= VL_EGAVGA_GFX_HEIGHT)
         {
@@ -343,9 +369,8 @@ static void VL_N64_Present(void *surface, int scrlX, int scrlY, bool singleBuffe
         }
     }
     graphics_draw_sprite(disp, 0, 0, staging_sprite);
-    display_show(disp);
-    disp = 0;
 #endif
+    display_show(disp);
 }
 
 void VL_N64_FlushParams()
