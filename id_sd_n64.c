@@ -129,7 +129,6 @@ void SD_N64_PCSpkOn(bool on, int freq)
         running_val = (running_val + 1) % audio_get_buffer_length();
 #endif
     }
-    debugf("run: %d\n", freq);
 }
 
 void SD_N64_Startup(void)
