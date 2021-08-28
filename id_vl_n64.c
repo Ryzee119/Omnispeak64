@@ -11,7 +11,9 @@
 #include <string.h>
 #include <libdragon.h>
 
+#ifdef SW_RENDERER
 #define USE_HW_RENDERER
+#endif
 
 typedef struct VL_N64_Surface
 {
@@ -348,13 +350,13 @@ static void VL_N64_Present(void *surface, int scrlX, int scrlY, bool singleBuffe
     rdp_detach_display();
 #else
     uint16_t *dest = (uint16_t *)staging_sprite->data;
-    for (int _y = scrlY; _y < scrlY + src->height; _y++)
+    for (int _y = scrlY; _y < src->height; _y++)
     {
         if (_y >= VL_EGAVGA_GFX_HEIGHT)
         {
             break;
         }
-        for (int _x = scrlX; _x < scrlX + src->width; _x++)
+        for (int _x = scrlX; _x < src->width; _x++)
         {
             if (_x >= VL_EGAVGA_GFX_WIDTH)
             {
@@ -365,7 +367,7 @@ static void VL_N64_Present(void *surface, int scrlX, int scrlY, bool singleBuffe
             uint8_t g = VL_EGARGBColorTable[vl_emuegavgaadapter.palette[ega]][1];
             uint8_t b = VL_EGARGBColorTable[vl_emuegavgaadapter.palette[ega]][2];
             uint16_t c = ((r >> 3) << 11) | ((g >> 3) << 6) | ((b >> 3) << 1) | 0x01; //rgba 5551
-            dest[_y * VL_EGAVGA_GFX_WIDTH + _x] = c;
+            dest[(_y - scrlY) * VL_EGAVGA_GFX_WIDTH + _x - scrlX] = c;
         }
     }
     graphics_draw_sprite(disp, 0, 0, staging_sprite);
