@@ -30,12 +30,13 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #include "id_sd.h"
 #include "ck_cross.h"
 
+#define SND_USE_LOOKUP
 #define PC_PIT_RATE 1193182
 #define SD_SFX_PART_RATE 140
 #define SD_SOUND_PART_RATE_BASE 1192030
 
 static int16_t *stream = NULL;
-static const int BITRATE = 44100;
+static const int BITRATE = 9600;
 static bool SD_N64_IsLocked = false;
 
 //Timing backend for the gamelogic which uses the sound system
@@ -122,7 +123,7 @@ void SD_N64_PCSpkOn(bool on, int freq)
         stream[i + 1] = sin_lookup[index];
         running_val = (running_val + 1) % lookup_len;
 #else
-        int sinus = 0.8 * 0x8000 * sin((2 * M_PI * hz) * (i + running_val) / BITRATE / 2);
+        int sinus = 0x3FFF * sin((2 * M_PI * hz) * (i + running_val) / BITRATE / 2);
         stream[i + 0] = sinus & 0xFFFF;
         stream[i + 1] = sinus & 0xFFFF;
         running_val = (running_val + 1) % audio_get_buffer_length();
