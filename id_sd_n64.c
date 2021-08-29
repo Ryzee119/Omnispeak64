@@ -114,7 +114,7 @@ static void _audio_callback(short *buffer, size_t numsamples)
     }
 }
 
-void SD_N64_SetTimer0(int16_t int_8_divisor)
+static void SD_N64_SetTimer0(int16_t int_8_divisor)
 {
     //Create an interrupt that occurs at a certain frequency.
     ints_per_sec = SD_SOUND_PART_RATE_BASE / int_8_divisor;
@@ -123,13 +123,13 @@ void SD_N64_SetTimer0(int16_t int_8_divisor)
     beep_samples_per_service = int_8_divisor * BITRATE / PC_PIT_RATE;
 }
 
-void SD_N64_alOut(uint8_t reg, uint8_t val)
+static void SD_N64_alOut(uint8_t reg, uint8_t val)
 {
     backend_t = ADLIB;
     OPL3_WriteReg(&nuked_oplChip, reg, val);
 }
 
-void SD_N64_PCSpkOn(bool on, int freq)
+static void SD_N64_PCSpkOn(bool on, int freq)
 {
     backend_t = SPEAKER;
     beep_on = on;
@@ -138,7 +138,7 @@ void SD_N64_PCSpkOn(bool on, int freq)
 	beep_half_cycle_cnt_max = BITRATE * freq;
 }
 
-void SD_N64_Startup(void)
+static void SD_N64_Startup(void)
 {
     if (SD_N64_AudioSubsystem_Up)
     {
@@ -157,7 +157,7 @@ void SD_N64_Startup(void)
     SD_N64_AudioSubsystem_Up = true;
 }
 
-void SD_N64_Shutdown(void)
+static void SD_N64_Shutdown(void)
 {
     if (SD_N64_AudioSubsystem_Up)
     {
@@ -167,7 +167,7 @@ void SD_N64_Shutdown(void)
     }
 }
 
-void SD_N64_Lock()
+static void SD_N64_Lock()
 {
     if (SD_N64_IsLocked)
     {
@@ -178,7 +178,7 @@ void SD_N64_Lock()
     SD_N64_IsLocked = true;
 }
 
-void SD_N64_Unlock()
+static void SD_N64_Unlock()
 {
     if (!SD_N64_IsLocked)
     {
@@ -189,7 +189,7 @@ void SD_N64_Unlock()
     SD_N64_IsLocked = false;
 }
 
-SD_Backend sd_n64_backend = {
+static SD_Backend sd_n64_backend = {
     .startup = SD_N64_Startup,
     .shutdown = SD_N64_Shutdown,
     .lock = SD_N64_Lock,
