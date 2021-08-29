@@ -14,7 +14,7 @@ N64TOOL = $(ROOTDIR)/bin/n64tool
 ASFLAGS = -mtune=vr4300 -march=vr4300
 CFLAGS = -std=gnu99 -march=vr4300 -mtune=vr4300 -O2 -I$(ROOTDIR)/mips64-elf/include -Iomnispeak/src -Ilibdragon/include -D_LIBDRAGON
 LDFLAGS = -L$(ROOTDIR)/mips64-elf/lib -ldragon -lc -lm -ldragonsys -Tn64.ld --gc-sections
-N64TOOLFLAGS = -l 8M -h $(ROOTDIR)/mips64-elf/lib/header -t "Omnispeak"
+N64TOOLFLAGS = -l 2M -h $(ROOTDIR)/mips64-elf/lib/header -t "Omnispeak"
 
 ifeq ($(N64_BYTE_SWAP),true)
 $(PROG_NAME).v64: $(PROG_NAME).z64
@@ -33,7 +33,7 @@ $(PROG_NAME).elf: \
 	id_sd_n64.o \
 	id_vl_n64.o \
 	id_fs_n64.o \
-	n64_rdp/RdpDisplayList.o \
+	n64_rdp/rdl.o \
 	omnispeak/src/ck_act.o \
 	omnispeak/src/ck_cross.o \
 	omnispeak/src/ck_game.o \
