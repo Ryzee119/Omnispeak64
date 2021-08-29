@@ -23,7 +23,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
 #include "id_in.h"
 
-void IN_N64_PumpEvents()
+static void IN_N64_PumpEvents()
 {
     controller_scan();
 
@@ -55,12 +55,12 @@ void IN_N64_PumpEvents()
     if (keys.c[0].B)       IN_HandleKeyUp(IN_SC_B, 0);
 }
 
-void IN_N64_WaitKey()
+static void IN_N64_WaitKey()
 {
     return;
 }
 
-void IN_N64_Startup(bool disableJoysticks)
+static void IN_N64_Startup(bool disableJoysticks)
 {
     init_interrupts();
     controller_init();
@@ -71,17 +71,17 @@ void IN_N64_Startup(bool disableJoysticks)
     IN_SetJoyConf(IN_joy_deadzone, 60);
 }
 
-bool IN_N64_StartJoy(int joystick)
+static bool IN_N64_StartJoy(int joystick)
 {
     return true;
 }
 
-void IN_N64_StopJoy(int joystick)
+static void IN_N64_StopJoy(int joystick)
 {
     return;
 }
 
-bool IN_N64_JoyPresent(int joystick)
+static bool IN_N64_JoyPresent(int joystick)
 {
     int controllers = get_controllers_present();
     int mask = (joystick == 0) ? CONTROLLER_1_INSERTED :
@@ -92,7 +92,7 @@ bool IN_N64_JoyPresent(int joystick)
     return ((controllers & mask) > 0);
 }
 
-void IN_N64_JoyGetAbs(int joystick, int *x, int *y)
+static void IN_N64_JoyGetAbs(int joystick, int *x, int *y)
 {
     struct controller_data keys = get_keys_pressed();
     int x_val = keys.c[joystick].x * 256;
@@ -141,7 +141,7 @@ void IN_N64_JoyGetAbs(int joystick, int *x, int *y)
     }
 }
 
-uint16_t IN_N64_JoyGetButtons(int joystick)
+static uint16_t IN_N64_JoyGetButtons(int joystick)
 {
     uint16_t mask = 0;
     struct controller_data keys = get_keys_pressed();
@@ -164,7 +164,7 @@ uint16_t IN_N64_JoyGetButtons(int joystick)
     return mask;
 }
 
-const char *IN_N64_JoyGetName(int joystick)
+static const char *IN_N64_JoyGetName(int joystick)
 {
     return "N64 Joystick";
 }
