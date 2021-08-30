@@ -30,7 +30,6 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #include "id_sd.h"
 #include "ck_cross.h"
 
-
 static const int PC_PIT_RATE = 1193182;
 static const int SD_SFX_PART_RATE = 140;
 static const int SD_SOUND_PART_RATE_BASE = 1192030;
@@ -62,7 +61,7 @@ static bool beep_on;
 static int16_t beep_current_sample;
 static uint32_t beep_half_cycle_cnt, beep_half_cycle_cnt_max;
 static uint32_t beep_samples_per_service;
-static int beep_cursor = 0;
+static int stream_cursor = 0;
 
 //Audio interrupts
 static void _t0service(int ovfl)
@@ -72,8 +71,8 @@ static void _t0service(int ovfl)
     if (backend_t == ADLIB)
     {
         //int chunk = audio_get_buffer_length() * ints_per_sec / BITRATE;
-        //OPL3_GenerateStream(&nuked_oplChip, &stream[beep_cursor], chunk);
-        //beep_cursor = (beep_cursor + (chunk * 2)) % (audio_get_buffer_length() * 2);
+        //OPL3_GenerateStream(&nuked_oplChip, &stream[stream_cursor], chunk);
+        //stream_cursor = (stream_cursor + (chunk * 2)) % (audio_get_buffer_length() * 2);
         return;
     }
     //Each service a number of audio samples is generated (beep_samples_per_service)
@@ -86,13 +85,13 @@ static void _t0service(int ovfl)
         }
         if (!beep_on)
         {
-            stream[beep_cursor + 0] = 0;
-            stream[beep_cursor + 1] = 0;
+            stream[stream_cursor + 0] = 0;
+            stream[stream_cursor + 1] = 0;
         }
         else
         {
-            stream[beep_cursor + 0] = beep_current_sample;
-            stream[beep_cursor + 1] = beep_current_sample;
+            stream[stream_cursor + 0] = beep_current_sample;
+            stream[stream_cursor + 1] = beep_current_sample;
             beep_half_cycle_cnt += 2 * PC_PIT_RATE;
             if (beep_half_cycle_cnt >= beep_half_cycle_cnt_max)
             {
@@ -100,7 +99,7 @@ static void _t0service(int ovfl)
                 beep_current_sample = 0x5FFF - beep_current_sample;
             }
         }
-        beep_cursor = (beep_cursor + 2) % (audio_get_buffer_length() * 2);
+        stream_cursor = (stream_cursor + 2) % (audio_get_buffer_length() * 2);
     }
 }
 
@@ -108,7 +107,7 @@ static void _audio_callback(short *buffer, size_t numsamples)
 {
     for (int i = 0; i < (numsamples * 2); i += 2)
     {
-        int j = (beep_cursor + i) % (numsamples * 2);
+        int j = (stream_cursor + i) % (numsamples * 2);
         buffer[i] = stream[j];
         buffer[i + 1] = stream[j + 1];
     }
