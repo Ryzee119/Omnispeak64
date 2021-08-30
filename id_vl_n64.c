@@ -150,23 +150,27 @@ static int VL_N64_SurfacePGet(void *surface, int x, int y)
 static void VL_N64_SurfaceRect(void *dst_surface, int x, int y, int w, int h, int colour)
 {
     VL_N64_Surface *surf = (VL_N64_Surface *)dst_surface;
-    for (int _y = y; _y < y + h; ++_y)
-    {
-        memset(((uint8_t *)surf->pixels) + _y * surf->width + x, colour, w);
-    }
-    /*
+#if 0//#ifdef USE_HW_RENDERER
+    //This mostly works but glitches out in the intro scenes?
     uint32_t _colour = (colour & 0xFF) << 24 | (colour & 0xFF) << 16 | (colour & 0xFF) << 8 | (colour & 0xFF);
+    data_cache_hit_writeback_invalidate(surf->pixels, surf->width * surf->height);
     rdl_push(dl,
              RdpSetColorImage(RDP_TILE_FORMAT_INDEX, RDP_TILE_SIZE_8BIT, surf->width, (uint32_t)surf->pixels),
              RdpSetClippingI(0, 0, surf->width, surf->height),
              RdpSyncPipe(),
-             RdpSyncTile(),
              RdpSetOtherModes(SOM_CYCLE_FILL),
-             RdpSetFillColor(_colour),
-             RdpFillRectangleI(x, y, 10, 10)
+             RdpSetFillColor(_colour), 
+             RdpFillRectangleI(x, y, x + w, y + h)
     );
-    data_cache_hit_writeback_invalidate(surf->pixels,  surf->width * surf->height);
-    */
+    rdl_flush(dl);
+    rdl_exec(dl);
+    rdl_reset(dl);
+#else
+    for (int _y = y; _y < y + h; ++_y)
+    {
+        memset(((uint8_t *)surf->pixels) + _y * surf->width + x, colour, w);
+    }
+#endif
 }
 
 static void VL_N64_SurfaceRect_PM(void *dst_surface, int x, int y, int w, int h, int colour, int mapmask)
@@ -318,57 +322,51 @@ static void VL_N64_Present(void *surface, int scrlX, int scrlY, bool singleBuffe
     //debugf("VL_N64_Present w: %d h: %d scrlx: %d scrly: %d\n", src->width, src->height, scrlX, scrlY);
     while (!(disp = display_lock())) {}
 #ifdef USE_HW_RENDERER
-    static const float scale_x = 1;
-    static const float scale_y = 1.2;
-
+    data_cache_hit_writeback_invalidate(src->pixels,  src->width * src->height);
     //We draw the screen from top to bottom.
     //We can only draw 2048bytes per loop and for simplicity we want it to be a multiple
-    //of the width. Start at 5 rows per loop.
-    //If the width * 5 is larger than 2048, try less rows until we're ok.
+    //of the width.
     int x_per_loop = src->width;
-    int y_per_loop = 5;
-    int current_y = 0;
+    int y_per_loop = 2048 / src->width;
+    int current_y = 0; //The texture is offset on the Yaxis by this many pixels
     int chunk_size = x_per_loop * y_per_loop;
-    while (chunk_size > 2048 && y_per_loop)
-    {
-        y_per_loop--;
-        chunk_size -= x_per_loop;
-    }
-    assert(y_per_loop > 0);
     assert(chunk_size <= 2048);
 
     rdp_attach_display(disp);
-    rdp_set_clipping(0, 0, 320, CK_Cross_min(200, src->height));
+    rdp_set_clipping(0, 0, VL_EGAVGA_GFX_WIDTH, CK_Cross_min(VL_EGAVGA_GFX_HEIGHT, src->height));
 
-    //Do we need to do this?
-    /*rdl_push(dl,
-             RdpSyncPipe(),
-             RdpSetOtherModes(SOM_CYCLE_FILL),
-             RdpSetFillColor16(border_colour),
-             RdpFillRectangleI(0, 0, 320, 240)
-    );*/
+    /* Not sure if we really need to do this. Save some cycles
+    rdl_push(dl,
+        RdpSyncPipe(),
+        RdpSetOtherModes(SOM_CYCLE_FILL),
+        RdpSetFillColor16(border_colour),
+        RdpFillRectangleI(0, 0, VL_EGAVGA_GFX_WIDTH, VL_EGAVGA_GFX_HEIGHT)
+    );
+    */
 
     rdl_push(dl,
-                RdpSyncPipe(),
-                RdpSetOtherModes(SOM_CYCLE_COPY | SOM_ALPHA_COMPARE | SOM_ENABLE_TLUT_RGB16)
+        RdpSyncPipe(),
+        RdpSetOtherModes(SOM_CYCLE_COPY | SOM_ALPHA_COMPARE | SOM_ENABLE_TLUT_RGB16)
     );
-    data_cache_hit_writeback_invalidate(src->pixels,  src->width * src->height);
-    for(int i = 0; i < ((src->width * src->height) / chunk_size); i++)
+
+    uint8_t *ptr = src->pixels + scrlY * x_per_loop;
+    while(current_y < src->height)
     {
         //Load y_per_loop * x_per_loop pixels into TMEM, and apply palette from pal_slot
         rdl_push(dl,
-                MRdpLoadTex8bpp(0, (uint32_t)src->pixels + (chunk_size * i), x_per_loop, y_per_loop, x_per_loop, RDP_AUTO_TMEM_SLOT(0), RDP_AUTO_PITCH),
-                MRdpSetTile8bpp(1, RDP_AUTO_TMEM_SLOT(0), RDP_AUTO_PITCH, RDP_AUTO_TMEM_SLOT(pal_slot), x_per_loop, y_per_loop)
+            MRdpLoadTex8bpp(0, (uint32_t)ptr, x_per_loop, y_per_loop, x_per_loop, RDP_AUTO_TMEM_SLOT(0), RDP_AUTO_PITCH),
+            MRdpSetTile8bpp(1, RDP_AUTO_TMEM_SLOT(0), RDP_AUTO_PITCH, RDP_AUTO_TMEM_SLOT(pal_slot), x_per_loop, y_per_loop)
         );
 
-        //Draw the texture to screen. The drawing is offset by scrlX and scrY
+        //Draw the texture to screen.
         int sw = x_per_loop, sh = y_per_loop;
-        int x0 = 0, y0 = CK_Cross_max(0, current_y - scrlY);
+        int x0 = 0, y0 = current_y;
         rdl_push(dl,
-                    RdpTextureRectangle1I(1, x0, y0, x0 + sw, y0 + y_per_loop),
-                    RdpTextureRectangle2I(scrlX, 0, 4, 1)
+            RdpTextureRectangle1I(1, x0, y0, x0 + sw, y0 + y_per_loop),
+            RdpTextureRectangle2I(scrlX, 0, 4, 1)
         );
         current_y += y_per_loop;
+        ptr += chunk_size;
     }
 
     rdl_flush(dl);
