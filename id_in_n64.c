@@ -40,8 +40,7 @@ static void IN_N64_PumpEvents()
     if (keys.c[0].C_down)  IN_HandleKeyDown(IN_SC_Enter, 0);
     if (keys.c[0].C_left)  IN_HandleKeyDown(IN_SC_Enter, 0);
     if (keys.c[0].C_right) IN_HandleKeyDown(IN_SC_Enter, 0);
-    //Make A and B work on the main menu
-    if (keys.c[0].A)       IN_HandleKeyDown(IN_SC_A, 0);
+    //Make B work on the main menu
     if (keys.c[0].B)       IN_HandleKeyDown(IN_SC_B, 0);
 
     keys = get_keys_up();
@@ -51,7 +50,6 @@ static void IN_N64_PumpEvents()
     if (keys.c[0].C_down)  IN_HandleKeyUp(IN_SC_Enter, 0);
     if (keys.c[0].C_left)  IN_HandleKeyUp(IN_SC_Enter, 0);
     if (keys.c[0].C_right) IN_HandleKeyUp(IN_SC_Enter, 0);
-    if (keys.c[0].A)       IN_HandleKeyUp(IN_SC_A, 0);
     if (keys.c[0].B)       IN_HandleKeyUp(IN_SC_B, 0);
 }
 
