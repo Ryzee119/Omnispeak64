@@ -2,6 +2,14 @@
 # Omnispeak64
 A port of Commander Keen "Commander Keen in Goodbye Galaxy!" to the Nintendo 64.
 
+## Controls
+* Jump - A
+* Fire - B or Z
+* Pogo - R
+* Main Menu - Start
+* Status Menu - C-Buttons
+* Movement - Dpad or Analog stuck 
+
 ## To-Do
 - [x] Savegame and persistent configuration support.
 - [x] OPL Adlib sound engine (Currently the performance is too bad to use). (PC Speaker driver is default).
