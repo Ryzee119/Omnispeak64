@@ -31,19 +31,105 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #include "id_mm.h"
 #include "id_us.h"
 
-static int active_files = 0;
-#define IN_EEPROM 0x8000
-#define EEPROM_FSIZE 2048
-#define EEPROM_NUMFILES 4
-static const eepfs_entry_t eeprom_16k_files[EEPROM_NUMFILES] = {
-    {"OMNISPK.CFG", EEPROM_FSIZE},
-    {"CONFIG.CK4", EEPROM_FSIZE},
-    {"SAVEGAM0.CK4", EEPROM_FSIZE},
+#define IN_SRAM 0x8000
+#define SRAM_NUMFILES 3
+typedef struct sram_files_t
+{
+    const char *name;
+    uint32_t size;
+    uint32_t offset;
+} sram_files_t;
+
+static sram_files_t sram_files[SRAM_NUMFILES + 1] = {
+    {"STUB", 0, 0}, //So we dont get a 0 handle.
+    {"OMNISPK.CFG", 1024, 0},
+    {"CONFIG.CK4", 1024, 0},
+    {"SAVEGAM0.CK4", 32768 - 2048, 0},
 };
 
-//Allow seek and stream type reading/writing to eeprom files by tracking file position
-//Position 0 isnt used and is reserved in the backend for a "signature file" so we have '+ 1'
-static int eeprom_16k_offsets[EEPROM_NUMFILES + 1];
+static int sram_get_handle_by_name(const char *name)
+{
+    FS_File handle = 0;
+    int i;
+    for (i = 0; i <= (SRAM_NUMFILES); i++)
+    {
+        if (strcasecmp(sram_files[i].name, name) == 0)
+        {
+            return i;
+        }
+    }
+    return -1;
+}
+
+static int sram_get_file_start_by_name(const char *name)
+{
+    int offset = 0;
+    int i;
+    for (i = 0; i < (SRAM_NUMFILES + 1); i++)
+    {
+        if (strcasecmp(sram_files[i].name, name) == 0)
+            break;
+        offset += sram_files[i].size;
+    }
+    if (i > SRAM_NUMFILES)
+        return -1;
+
+    return offset;
+}
+
+static int sram_get_file_start_by_handle(FS_File handle)
+{
+    handle &= ~IN_SRAM;
+    assert(handle <= SRAM_NUMFILES);
+
+    int offset = 0;
+    for (int i = 0; i < handle; i++)
+    {
+        offset += sram_files[i].size;
+    }
+    return offset;
+}
+
+uint8_t __attribute__((aligned(16))) cache[32];
+static int read_sram(uint8_t *dst, uint32_t offset, int len)
+{
+    //Make sure we're on a 32bit boundary
+    uint32_t _off = offset % 4;
+    offset -= _off;
+    assert(offset + len < 32768);
+
+    while (len > 0)
+    {
+        data_cache_hit_writeback_invalidate(cache, 20);
+        dma_read(cache, 0x08000000 + offset, 20);
+        memcpy(dst, cache + _off, CK_Cross_min(16, len));
+        dst += 16;
+        offset += 16;
+        len -= 16;
+    }
+}
+
+static int write_sram(uint8_t *src, uint32_t offset, int len)
+{
+    //Make sure we're on a 32bit boundary
+    uint32_t _off = offset % 4;
+
+    len += _off;
+    offset -= _off;
+    assert(offset + len < 32768);
+
+    while (len > 0)
+    {
+        data_cache_hit_writeback_invalidate(cache, 20);
+        dma_read(cache, 0x08000000 + (offset), 20);
+        memcpy(cache + _off, src, CK_Cross_min(16, len));
+        data_cache_hit_writeback_invalidate(cache, len);
+        dma_write(cache, 0x08000000 + offset, len);
+        src += 16;
+        offset += 16;
+        len -= 16;
+    }
+}
 
 static char *FS_GetDataPath(const char *filename)
 {
@@ -52,40 +138,26 @@ static char *FS_GetDataPath(const char *filename)
     return path;
 }
 
-bool FS_IsFileValid(FS_File file)
+bool FS_IsFileValid(FS_File handle)
 {
-    //FIXME FS_File needs to be int in fs.h
-    if (file <= 0)
-    {
-        //fprintf(stderr,"file %d not valid\n", file);
-    }
-    return (file > 0);
+    return (handle > 0);
 }
 
-size_t FS_Read(void *ptr, size_t size, size_t nmemb, FS_File file)
+size_t FS_Read(void *ptr, size_t size, size_t nmemb, FS_File handle)
 {
     int num_bytes = nmemb * size;
-    /*
-    if (file & IN_EEPROM)
+    if (handle & IN_SRAM)
     {
-        file &= ~IN_EEPROM;
-        const eepfs_file_t *_file = eepfs_get_file(file);
-        if (_file == NULL)
-        {
-            return 0;
-        }
-        const size_t start_bytes = _file->start_block * EEPROM_BLOCK_SIZE + eeprom_16k_offsets[file];
-        if ((start_bytes + num_bytes) >= EEPROM_FSIZE)
-        {
-            num_bytes = (start_bytes + num_bytes) - EEPROM_FSIZE - 1;
-        }
-        eeprom_read_bytes(ptr, start_bytes, num_bytes);
-        return num_bytes;
-        
-        return 0;
+        handle &= ~IN_SRAM;
+        assert(handle <= SRAM_NUMFILES);
+        assert(handle != 0);
+        int offset = sram_get_file_start_by_handle(handle) + sram_files[handle].offset;
+        read_sram(ptr, offset, num_bytes);
+        sram_files[handle].offset += num_bytes;
+        return nmemb;
     }
-    */
-    int rb = dfs_read(ptr, 1, num_bytes, file);
+
+    int rb = dfs_read(ptr, 1, num_bytes, handle);
     if (rb != num_bytes)
     {
         debugf("Read byte mismatch %d %d\n", rb, num_bytes);
@@ -93,93 +165,74 @@ size_t FS_Read(void *ptr, size_t size, size_t nmemb, FS_File file)
     return rb / size;
 }
 
-size_t FS_Write(const void *ptr, size_t size, size_t nmemb, FS_File file)
+size_t FS_Write(const void *ptr, size_t size, size_t nmemb, FS_File handle)
 {
     int num_bytes = nmemb * size;
-    /*
-    if (file & IN_EEPROM)
+    if (handle & IN_SRAM)
     {
-        file &= ~IN_EEPROM;
-        const eepfs_file_t *_file = eepfs_get_file(file);
-        if (_file == NULL)
-        {
-            return 0;
-        }
-        const size_t start_bytes = _file->start_block * EEPROM_BLOCK_SIZE + eeprom_16k_offsets[file];
-        if ((start_bytes + num_bytes) >= EEPROM_FSIZE)
-        {
-            num_bytes = (start_bytes + num_bytes) - EEPROM_FSIZE - 1;
-        }
-        eeprom_write_bytes(ptr, start_bytes, num_bytes);
-        eeprom_16k_offsets[file] += num_bytes;
-        return num_bytes;
-        return 0;
+        handle &= ~IN_SRAM;
+        assert(handle <= SRAM_NUMFILES);
+        assert(handle != 0);
+        int offset = sram_get_file_start_by_handle(handle) + sram_files[handle].offset;
+        write_sram((uint8_t *)ptr, offset, num_bytes);
+        sram_files[handle].offset = sram_files[handle].offset + num_bytes % sram_files[handle].size;
+        return nmemb;
     }
-    */
+    assert(0);
     //Can't write dfs. Shouldnt be needed.
     return 0;
 }
 
-size_t FS_SeekTo(FS_File file, size_t offset)
+size_t FS_SeekTo(FS_File handle, size_t offset)
 {
     long int oldOff = 0;
-    /*
-    if (file & IN_EEPROM)
+    if (handle & IN_SRAM)
     {
-        
-        file &= ~IN_EEPROM;
-        const eepfs_file_t *_file = eepfs_get_file(file);
-        if (_file != NULL)
-        {
-            oldOff = eeprom_16k_offsets[file];
-            eeprom_16k_offsets[file] = offset;
-        }
-        
+        handle &= ~IN_SRAM;
+        assert(handle <= SRAM_NUMFILES);
+        assert(handle != 0);
+        oldOff = sram_files[handle].offset;
+        sram_files[handle].offset = offset;
     }
     else
-    */
-    //{
-        oldOff = dfs_tell(file);
-		dfs_seek(file, offset, SEEK_SET);
+    {
+        oldOff = dfs_tell(handle);
+        dfs_seek(handle, offset, SEEK_SET);
         return oldOff;
-    //}
+    }
 
     return oldOff;
 }
 
-void FS_CloseFile(FS_File file)
+void FS_CloseFile(FS_File handle)
 {
-    /*if (file & IN_EEPROM)
+    if (handle & IN_SRAM)
     {
-        //Don't need to close eeprom files
         return;
-    }*/
-    dfs_close(file);
-    active_files--;
-    //debugf("active files %d\n", active_files);
+    }
+    dfs_close(handle);
 }
 
-size_t FS_GetFileSize(FS_File file)
+size_t FS_GetFileSize(FS_File handle)
 {
-    /*
-    if (file & IN_EEPROM)
+    if (handle & IN_SRAM)
     {
-        return EEPROM_FSIZE;
+        handle &= ~IN_SRAM;
+        assert(handle <= SRAM_NUMFILES);
+        assert(handle != 0);
+        return sram_files[handle].size;
     }
-    */
-    return dfs_size(file);
+    return dfs_size(handle);
 }
 
 FS_File FS_OpenKeenFile(const char *filename)
 {
-    FS_File fp = dfs_open(FS_GetDataPath(filename));
-    if (fp < 0)
+    FS_File handle = dfs_open(FS_GetDataPath(filename));
+    if (handle < 0)
     {
         debugf("Error opening %s\n", filename);
     }
-    active_files++;
-    //debugf("active files %d\n", active_files);
-    return fp;
+    return handle;
 }
 
 FS_File FS_OpenOmniFile(const char *filename)
@@ -189,55 +242,51 @@ FS_File FS_OpenOmniFile(const char *filename)
 
 FS_File FS_OpenUserFile(const char *filename)
 {
-    /*
-    int handle = eepfs_find_handle(filename);
+    FS_File handle = sram_get_handle_by_name(filename);
     if (handle < 0)
     {
+        debugf("Could not open %s\n", filename);
         return 0;
     }
-    eeprom_16k_offsets[handle] = 0;
-    return handle | IN_EEPROM;
-    */
-    return 0;
+    sram_files[handle].offset = 0;
+    return handle | IN_SRAM;
 }
 
 FS_File FS_CreateUserFile(const char *filename)
 {
-    /*
-    int handle = eepfs_find_handle(filename);
+    FS_File handle = sram_get_handle_by_name(filename);
     if (handle < 0)
     {
+        debugf("Could not create %s\n", filename);
         return 0;
     }
-    eeprom_16k_offsets[handle] = 0;
-    return handle | IN_EEPROM;
-    */
-    return 0;
+    sram_files[handle].offset = 0;
+    return handle | IN_SRAM;
 }
 
-// Does a file exist (and is it readable)
+// Does a handle exist (and is it readable)
 bool FS_IsKeenFilePresent(const char *filename)
 {
-    FS_File fp = dfs_open(FS_GetDataPath(filename));
-    if (fp < 0)
+    FS_File handle = dfs_open(FS_GetDataPath(filename));
+    if (handle < 0)
     {
         debugf("%s is NOT present\n", filename);
         return false;
     }
-    dfs_close(fp);
+    dfs_close(handle);
     return true;
 }
 
-// Does a file exist (and is it readable)
+// Does a handle exist (and is it readable)
 bool FS_IsOmniFilePresent(const char *filename)
 {
-    FS_File fp = dfs_open(FS_GetDataPath(filename));
-    if (fp < 0)
+    FS_File handle = dfs_open(FS_GetDataPath(filename));
+    if (handle < 0)
     {
         debugf("%s is NOT present\n", filename);
         return false;
     }
-    dfs_close(fp);
+    dfs_close(handle);
     return true;
 }
 
@@ -255,45 +304,46 @@ char *FS_AdjustExtension(const char *filename)
     return newname;
 }
 
-// Does a file exist (and is it readable)
+// Does a handle exist (and is it readable)
 bool FS_IsUserFilePresent(const char *filename)
 {
-    return 0; //eepfs_find_handle(filename) > 0;
+    if (sram_get_handle_by_name(filename) < 0)
+    {
+        debugf("FS_IsUserFilePresent %s is not present\n", filename);
+        return false;
+    }
+    return true;
 }
 
 bool FSL_IsGoodOmniPath(const char *ext)
 {
     if (!FS_IsOmniFilePresent("ACTION.CK4"))
+    {
+        debugf("Omnipath is NOT OK\n");
         return false;
-    debugf("Omnipath is OK\n");
+    }
     return true;
 }
 
 bool FSL_IsGoodUserPath()
 {
-    //const eeprom_type_t eeprom_type = eeprom_present();
-    //if (eeprom_type == EEPROM_16K)
-    //{
-    //    return true;
-    //}
-    return false;
+    return true;
 }
 
 void FS_Startup()
 {
     debug_init(DEBUG_FEATURE_LOG_ISVIEWER);
     dfs_init(DFS_DEFAULT_LOCATION);
-    //eepfs_init(eeprom_16k_files, EEPROM_NUMFILES); //FIXME: Warn if no eeprom
 }
 
-size_t FS_ReadInt8LE(void *ptr, size_t count, FS_File stream)
+size_t FS_ReadInt8LE(void *ptr, size_t count, FS_File handle)
 {
-    return FS_Read(ptr, 1, count, stream);
+    return FS_Read(ptr, 1, count, handle);
 }
 
-size_t FS_ReadInt16LE(void *ptr, size_t count, FS_File stream)
+size_t FS_ReadInt16LE(void *ptr, size_t count, FS_File handle)
 {
-    count = FS_Read(ptr, 2, count, stream);
+    count = FS_Read(ptr, 2, count, handle);
 #ifdef CK_CROSS_IS_BIGENDIAN
     uint16_t *uptr = (uint16_t *)ptr;
     for (size_t loopVar = 0; loopVar < count; loopVar++, uptr++)
@@ -302,9 +352,9 @@ size_t FS_ReadInt16LE(void *ptr, size_t count, FS_File stream)
     return count;
 }
 
-size_t FS_ReadInt32LE(void *ptr, size_t count, FS_File stream)
+size_t FS_ReadInt32LE(void *ptr, size_t count, FS_File handle)
 {
-    count = FS_Read(ptr, 4, count, stream);
+    count = FS_Read(ptr, 4, count, handle);
 #ifdef CK_CROSS_IS_BIGENDIAN
     uint32_t *uptr = (uint32_t *)ptr;
     for (size_t loopVar = 0; loopVar < count; loopVar++, uptr++)
@@ -313,15 +363,15 @@ size_t FS_ReadInt32LE(void *ptr, size_t count, FS_File stream)
     return count;
 }
 
-size_t FS_WriteInt8LE(const void *ptr, size_t count, FS_File stream)
+size_t FS_WriteInt8LE(const void *ptr, size_t count, FS_File handle)
 {
-    return FS_Write(ptr, 1, count, stream);
+    return FS_Write(ptr, 1, count, handle);
 }
 
-size_t FS_WriteInt16LE(const void *ptr, size_t count, FS_File stream)
+size_t FS_WriteInt16LE(const void *ptr, size_t count, FS_File handle)
 {
 #ifndef CK_CROSS_IS_BIGENDIAN
-    return FS_Write(ptr, 2, count, stream);
+    return FS_Write(ptr, 2, count, handle);
 #else
     uint16_t val;
     size_t actualCount = 0;
@@ -329,16 +379,16 @@ size_t FS_WriteInt16LE(const void *ptr, size_t count, FS_File stream)
     for (size_t loopVar = 0; loopVar < count; loopVar++, uptr++)
     {
         val = CK_Cross_Swap16(*uptr);
-        actualCount += FS_Write(&val, 2, 1, stream);
+        actualCount += FS_Write(&val, 2, 1, handle);
     }
     return actualCount;
 #endif
 }
 
-size_t FS_WriteInt32LE(const void *ptr, size_t count, FS_File stream)
+size_t FS_WriteInt32LE(const void *ptr, size_t count, FS_File handle)
 {
 #ifndef CK_CROSS_IS_BIGENDIAN
-    return FS_Write(ptr, 4, count, stream);
+    return FS_Write(ptr, 4, count, handle);
 #else
     uint32_t val;
     size_t actualCount = 0;
@@ -346,20 +396,20 @@ size_t FS_WriteInt32LE(const void *ptr, size_t count, FS_File stream)
     for (size_t loopVar = 0; loopVar < count; loopVar++, uptr++)
     {
         val = CK_Cross_Swap32(*uptr);
-        actualCount += FS_Write(&val, 4, 1, stream);
+        actualCount += FS_Write(&val, 4, 1, handle);
     }
     return actualCount;
 #endif
 }
 
-size_t FS_ReadBoolFrom16LE(void *ptr, size_t count, FS_File stream)
+size_t FS_ReadBoolFrom16LE(void *ptr, size_t count, FS_File handle)
 {
     uint16_t val;
     size_t actualCount = 0;
     bool *currBoolPtr = (bool *)ptr; // No lvalue compilation error
     for (size_t loopVar = 0; loopVar < count; loopVar++, currBoolPtr++)
     {
-        if (FS_Read(&val, 2, 1, stream)) // Should be either 0 or 1
+        if (FS_Read(&val, 2, 1, handle)) // Should be either 0 or 1
         {
             *currBoolPtr = (val); // NOTE: No need to byte-swap
             actualCount++;
@@ -368,7 +418,7 @@ size_t FS_ReadBoolFrom16LE(void *ptr, size_t count, FS_File stream)
     return actualCount;
 }
 
-size_t FS_WriteBoolTo16LE(const void *ptr, size_t count, FS_File stream)
+size_t FS_WriteBoolTo16LE(const void *ptr, size_t count, FS_File handle)
 {
     uint16_t val;
     size_t actualCount = 0;
@@ -376,43 +426,42 @@ size_t FS_WriteBoolTo16LE(const void *ptr, size_t count, FS_File stream)
     for (size_t loopVar = 0; loopVar < count; loopVar++, currBoolPtr++)
     {
         val = CK_Cross_SwapLE16((*currBoolPtr) ? 1 : 0);
-        actualCount += FS_Write(&val, 2, 1, stream);
+        actualCount += FS_Write(&val, 2, 1, handle);
     }
     return actualCount;
 }
 
-int FS_PrintF(FS_File stream, const char *fmt, ...)
+int FS_PrintF(FS_File handle, const char *fmt, ...)
 {
     uint8_t buff[64]; //FIXME: Is this enough/ok on the stack?
     va_list args;
     va_start(args, fmt);
     vsnprintf(buff, sizeof(buff), fmt, args);
     va_end(args);
-    return FS_Write(buff, 1, strnlen(buff, sizeof(buff)), stream);
+    return FS_Write(buff, 1, strnlen(buff, sizeof(buff)), handle);
 }
 
 bool FS_LoadUserFile(const char *filename, mm_ptr_t *ptr, int *memsize)
 {
-    FS_File file = FS_OpenUserFile(filename);
+    FS_File handle = FS_OpenUserFile(filename);
 
-    if (!FS_IsFileValid(file))
+    if (!FS_IsFileValid(handle))
     {
         *ptr = 0;
         *memsize = 0;
         return false;
     }
 
-    //Get length of file
-    int length = FS_GetFileSize(file);
+    //Get length of handle
+    int length = FS_GetFileSize(handle);
 
     MM_GetPtr(ptr, length);
 
     if (memsize)
         *memsize = length;
+    int amountRead = FS_Read(*ptr, 1, length, handle);
 
-    int amountRead = FS_Read(*ptr, 1, length, file);
-
-    FS_CloseFile(file);
+    FS_CloseFile(handle);
 
     if (amountRead != length)
         return false;
