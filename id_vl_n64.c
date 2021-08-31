@@ -352,6 +352,11 @@ static void VL_N64_Present(void *surface, int scrlX, int scrlY, bool singleBuffe
     uint8_t *ptr = src->pixels + scrlY * x_per_loop;
     while(current_y < src->height)
     {
+        if (current_y >= VL_EGAVGA_GFX_HEIGHT)
+        {
+            break;
+        }
+
         //Load y_per_loop * x_per_loop pixels into TMEM, and apply palette from pal_slot
         rdl_push(dl,
             MRdpLoadTex8bpp(0, (uint32_t)ptr, x_per_loop, y_per_loop, x_per_loop, RDP_AUTO_TMEM_SLOT(0), RDP_AUTO_PITCH),
