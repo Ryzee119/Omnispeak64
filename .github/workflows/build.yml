@@ -24,12 +24,14 @@ jobs:
            sudo libdragon start
            sudo libdragon make
            cp omnispeak/LICENSE LICENSE
+           export BUILD_TAG=build-$(date -u +'%Y%m%d%H%M')
+           echo "BUILD_TAG=$BUILD_TAG" >> $GITHUB_ENV
 
     - name: Create Release
       uses: "marvinpinto/action-automatic-releases@latest"
       with:
         repo_token: "${{ secrets.GITHUB_TOKEN }}"
-        automatic_release_tag: "latest"
+        automatic_release_tag: ${{ env.BUILD_TAG }}
         prerelease: true
         files: |
                LICENSE
