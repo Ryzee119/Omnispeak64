@@ -1,0 +1,36 @@
+name: Build
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repo
+      uses: actions/checkout@v2
+      with:
+        submodules: recursive
+
+    - name: configure
+      run: |
+           sudo npm install -g libdragon
+           sudo libdragon download
+           sudo libdragon start
+           sudo libdragon make
+           cp omnispeak/LICENSE LICENSE
+
+    - name: Create Release
+      uses: "marvinpinto/action-automatic-releases@latest"
+      with:
+        repo_token: "${{ secrets.GITHUB_TOKEN }}"
+        automatic_release_tag: "latest"
+        prerelease: true
+        files: |
+               LICENSE
+               *.z64
