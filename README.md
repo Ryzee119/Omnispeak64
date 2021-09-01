@@ -15,6 +15,11 @@ A port of Commander Keen "Commander Keen in Goodbye Galaxy!" to the Nintendo 64.
 - [ ] Menu to select which Keen episode to load or likely separate ROMS for each episode.
 - [ ] Still lots of CPU rendering (Blitting, blending, fills). Convert this to the RDP/RSP.
 
+## Known issues
+- If the save game file exceeds 32kb it will corrupt. This happens if saving with many onscreen objects. Avoid this for now.
+- Ive had freezes on the odd occasion, particularly on the intro credits.
+- Enabling ADLIB sound in the menu will cause sound glitches. Just keep it on PC Speaker for now.
+
 ## Download
 You can download a precompiled binary from the [Release section](https://github.com/Ryzee119/Omnispeak64/releases). This include the shareware version of the first episode.
 The other 2 episodes are supported, however need files from the original game. Ref https://github.com/sulix/omnispeak. Copy these to the `filesystem` folder and recompile.
