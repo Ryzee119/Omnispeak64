@@ -23,6 +23,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #include <stdio.h>
 #include <string.h>
 #include <libdragon.h>
+#include <regsinternal.h>
 
 #include "ck_cross.h"
 #include "ck_ep.h"
@@ -32,7 +33,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #include "id_us.h"
 
 #define IN_SRAM 0x8000
-#define SRAM_NUMFILES 3
+#define SRAM_NUMFILES 2
 typedef struct sram_files_t
 {
     const char *name;
@@ -42,7 +43,6 @@ typedef struct sram_files_t
 
 static sram_files_t sram_files[SRAM_NUMFILES + 1] = {
     {"STUB", 0, 0}, //So we dont get a 0 handle.
-    {"OMNISPK.CFG", 1024, 0},
     {"CONFIG.CK4", 1024, 0},
     {"SAVEGAM0.CK4", 32768 - 2048, 0},
 };
@@ -91,6 +91,39 @@ static int sram_get_file_start_by_handle(FS_File handle)
 }
 
 uint8_t __attribute__((aligned(16))) cache[32];
+static volatile struct PI_regs_s * const PI_regs = (struct PI_regs_s *)0xa4600000;
+static void _dma_read(void * ram_address, unsigned long pi_address, unsigned long len) 
+{
+    assert(len > 0);
+    disable_interrupts();
+    while (dma_busy()) ;
+    MEMORY_BARRIER();
+    PI_regs->ram_address = ram_address;
+    MEMORY_BARRIER();
+    PI_regs->pi_address = pi_address;
+    MEMORY_BARRIER();
+    PI_regs->write_length = len-1;
+    MEMORY_BARRIER();
+    while (dma_busy()) ;
+    enable_interrupts();
+}
+
+static void _dma_write(void * ram_address, unsigned long pi_address, unsigned long len) 
+{
+    assert(len > 0);
+    disable_interrupts();
+    while (dma_busy()) ;
+    MEMORY_BARRIER();
+    PI_regs->ram_address = (void*)ram_address;
+    MEMORY_BARRIER();
+    PI_regs->pi_address = pi_address;
+    MEMORY_BARRIER();
+    PI_regs->read_length = len-1;
+    MEMORY_BARRIER();
+    while (dma_busy());
+    enable_interrupts();
+}
+
 static int read_sram(uint8_t *dst, uint32_t offset, int len)
 {
     //Make sure we're on a 32bit boundary
@@ -101,7 +134,7 @@ static int read_sram(uint8_t *dst, uint32_t offset, int len)
     while (len > 0)
     {
         data_cache_hit_writeback_invalidate(cache, 20);
-        dma_read(cache, 0x08000000 + offset, 20);
+        _dma_read(cache, 0x08000000 + offset, 20);
         memcpy(dst, cache + _off, CK_Cross_min(16, len));
         dst += 16;
         offset += 16;
@@ -121,10 +154,10 @@ static int write_sram(uint8_t *src, uint32_t offset, int len)
     while (len > 0)
     {
         data_cache_hit_writeback_invalidate(cache, 20);
-        dma_read(cache, 0x08000000 + (offset), 20);
+        _dma_read(cache, 0x08000000 + (offset), 20);
         memcpy(cache + _off, src, CK_Cross_min(16, len));
         data_cache_hit_writeback_invalidate(cache, len);
-        dma_write(cache, 0x08000000 + offset, len);
+        _dma_write(cache, 0x08000000 + offset, len);
         src += 16;
         offset += 16;
         len -= 16;
@@ -153,7 +186,7 @@ size_t FS_Read(void *ptr, size_t size, size_t nmemb, FS_File handle)
         assert(handle != 0);
         int offset = sram_get_file_start_by_handle(handle) + sram_files[handle].offset;
         read_sram(ptr, offset, num_bytes);
-        sram_files[handle].offset += num_bytes;
+        sram_files[handle].offset = (sram_files[handle].offset + num_bytes) % sram_files[handle].size;
         return nmemb;
     }
 
@@ -175,7 +208,7 @@ size_t FS_Write(const void *ptr, size_t size, size_t nmemb, FS_File handle)
         assert(handle != 0);
         int offset = sram_get_file_start_by_handle(handle) + sram_files[handle].offset;
         write_sram((uint8_t *)ptr, offset, num_bytes);
-        sram_files[handle].offset = sram_files[handle].offset + num_bytes % sram_files[handle].size;
+        sram_files[handle].offset = (sram_files[handle].offset + num_bytes) % sram_files[handle].size;
         return nmemb;
     }
     assert(0);
