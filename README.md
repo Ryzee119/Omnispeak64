@@ -8,7 +8,7 @@ A port of Commander Keen "Commander Keen in Goodbye Galaxy!" to the Nintendo 64.
 * Pogo - R
 * Main Menu - Start
 * Status Menu - C-Buttons
-* Movement - Dpad or Analog stuck 
+* Movement - Dpad or Analog stick 
 
 ## To-Do
 - [ ] OPL Adlib sound engine (Currently the performance is too bad to use). (PC Speaker driver is default).
@@ -17,7 +17,7 @@ A port of Commander Keen "Commander Keen in Goodbye Galaxy!" to the Nintendo 64.
 
 ## Download
 You can download a precompiled binary from the [Release section](https://github.com/Ryzee119/Omnispeak64/releases). This include the shareware version of the first episode.
-Support for the other 2 episodes are supported, however need files from the original game. Ref https://github.com/sulix/omnispeak. Copy these to the `filesystem` folder and recompile.
+The other 2 episodes are supported, however need files from the original game. Ref https://github.com/sulix/omnispeak. Copy these to the `filesystem` folder and recompile.
 A menu to select the epsiode is in the todo list.
 
 ## Build
