@@ -2,9 +2,15 @@ name: Build
 
 on:
   push:
-    branches: [ master ]
+    paths-ignore:
+      - '.github/*'
+      - '.github/*_TEMPLATE/**'
+      - '*.md'
   pull_request:
-    branches: [ master ]
+    paths-ignore:
+      - '.github/*'
+      - '.github/*_TEMPLATE/**'
+      - '*.md'
 
 jobs:
   build:
@@ -17,7 +23,7 @@ jobs:
       with:
         submodules: recursive
 
-    - name: configure
+    - name: Compile
       run: |
            sudo npm install -g libdragon
            sudo libdragon download
@@ -27,7 +33,8 @@ jobs:
            export BUILD_TAG=build-$(date -u +'%Y%m%d%H%M')
            echo "BUILD_TAG=$BUILD_TAG" >> $GITHUB_ENV
 
-    - name: Create Release
+    - if: github.event_name == 'push'
+      name: Create Release
       uses: "marvinpinto/action-automatic-releases@latest"
       with:
         repo_token: "${{ secrets.GITHUB_TOKEN }}"
