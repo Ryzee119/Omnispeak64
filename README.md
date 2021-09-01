@@ -11,10 +11,9 @@ A port of Commander Keen "Commander Keen in Goodbye Galaxy!" to the Nintendo 64.
 * Movement - Dpad or Analog stuck 
 
 ## To-Do
-- [x] Savegame and persistent configuration support.
-- [x] OPL Adlib sound engine (Currently the performance is too bad to use). (PC Speaker driver is default).
-- [x] Menu to select which Keen episode to load.
-- [x] Still lots of CPU rendering (Blitting, blending, fills). Convert this to the RDP/RSP.
+- [ ] OPL Adlib sound engine (Currently the performance is too bad to use). (PC Speaker driver is default).
+- [ ] Menu to select which Keen episode to load or likely separate ROMS for each episode.
+- [ ] Still lots of CPU rendering (Blitting, blending, fills). Convert this to the RDP/RSP.
 
 ## Download
 You can download a precompiled binary from the [Release section](https://github.com/Ryzee119/Omnispeak64/releases). This include the shareware version of the first episode.
