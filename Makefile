@@ -10,11 +10,13 @@ OBJCOPY = $(GCCN64PREFIX)objcopy
 CHKSUM64 = $(ROOTDIR)/bin/chksum64
 MKDFS = $(ROOTDIR)/bin/mkdfs
 N64TOOL = $(ROOTDIR)/bin/n64tool
+ED64ROMCONFIG = $(ROOTDIR)/bin/ed64romconfig
 
 ASFLAGS = -mtune=vr4300 -march=vr4300
 CFLAGS = -std=gnu99 -march=vr4300 -mtune=vr4300 -O2 -I$(ROOTDIR)/mips64-elf/include -Iomnispeak/src -Ilibdragon/include -D_LIBDRAGON
 LDFLAGS = -L$(ROOTDIR)/mips64-elf/lib -ldragon -lc -lm -ldragonsys -Tn64.ld --gc-sections
 N64TOOLFLAGS = -l 2M -h $(ROOTDIR)/mips64-elf/lib/header -t "Omnispeak"
+ED64ROMCONFIGFLAGS = --savetype sram768k
 
 ifeq ($(N64_BYTE_SWAP),true)
 $(PROG_NAME).v64: $(PROG_NAME).z64
@@ -23,6 +25,7 @@ endif
 
 $(PROG_NAME).z64: $(PROG_NAME).bin $(PROG_NAME).dfs
 	$(N64TOOL) $(N64TOOLFLAGS) -o $@ $(PROG_NAME).bin -s 1M $(PROG_NAME).dfs
+	$(ED64ROMCONFIG) $(ED64ROMCONFIGFLAGS) $@
 	$(CHKSUM64) $@
 
 $(PROG_NAME).bin: $(PROG_NAME).elf
