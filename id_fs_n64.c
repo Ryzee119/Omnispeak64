@@ -43,8 +43,8 @@ typedef struct sram_files_t
 
 static sram_files_t sram_files[SRAM_NUMFILES + 1] = {
     {"STUB", 0, 0}, //So we dont get a 0 handle.
-    {"CONFIG.CK4", 1024, 0},
-    {"SAVEGAM0.CK4", 32768 - 2048, 0},
+    {"CONFIG.CK4", 2048, 0},
+    {"SAVEGAM0.CK4", 98304 - 2048, 0},
 };
 
 static int sram_get_handle_by_name(const char *name)
@@ -90,7 +90,7 @@ static int sram_get_file_start_by_handle(FS_File handle)
     return offset;
 }
 
-uint8_t __attribute__((aligned(16))) cache[32];
+uint8_t __attribute__((aligned(16))) sector_cache[16];
 static volatile struct PI_regs_s * const PI_regs = (struct PI_regs_s *)0xa4600000;
 static void _dma_read(void * ram_address, unsigned long pi_address, unsigned long len) 
 {
@@ -124,43 +124,90 @@ static void _dma_write(void * ram_address, unsigned long pi_address, unsigned lo
     enable_interrupts();
 }
 
+//Reading and writing to SRAM via DMA must occur from a 16 bytes aligned buffer. For Omnispeak, the save file
+//can be greater than 1 SRAM bank (32kB), so I need to be able to manage access multiple banks contiguously from non aligned buffers at random lengths.
+//I read and write by 16 byte 'sectors' and manage the banking automatically. If a read crosses to a different bank this is handled here.
 static int read_sram(uint8_t *dst, uint32_t offset, int len)
 {
-    //Make sure we're on a 32bit boundary
-    uint32_t _off = offset % 4;
-    offset -= _off;
-    assert(offset + len < 32768);
+    assert(offset + len < 0x18000);
 
+    uint32_t aligned_offset;
+    uint32_t banked_offset;
     while (len > 0)
     {
-        data_cache_hit_writeback_invalidate(cache, 20);
-        _dma_read(cache, 0x08000000 + offset, 20);
-        memcpy(dst, cache + _off, CK_Cross_min(16, len));
-        dst += 16;
-        offset += 16;
-        len -= 16;
+        //Make sure we're on a 32bit boundary in a 16 byte sector
+        aligned_offset = offset - (offset % 4);
+        aligned_offset = aligned_offset - (aligned_offset % 16);
+
+        //Select the right bank
+        if (aligned_offset > 0xFFFF)
+        {
+            banked_offset = aligned_offset - (0xFFFF + 1);
+            banked_offset |= (2 << 18);
+        }
+        else if (aligned_offset > 0x7FFF)
+        {
+            banked_offset = aligned_offset - (0x7FFF + 1);
+            banked_offset |= (1 << 18);
+        }
+        else
+        {
+            banked_offset = aligned_offset;
+        }
+
+        //Read a sector of data from SRAM
+        data_cache_hit_writeback_invalidate(sector_cache, 16);
+        _dma_read(sector_cache, 0x08000000 + (banked_offset & 0x07FFFFFF), 16);
+
+        //Copy only the required bytes into the dst buffer
+        int br = CK_Cross_min(len, 16 - (offset - aligned_offset));
+        memcpy(dst, sector_cache + (offset - aligned_offset), br);
+
+        dst += br;
+        offset += br;
+        len -= br;
     }
 }
 
 static int write_sram(uint8_t *src, uint32_t offset, int len)
 {
-    //Make sure we're on a 32bit boundary
-    uint32_t _off = offset % 4;
+    assert(offset + len < 0x18000);
 
-    len += _off;
-    offset -= _off;
-    assert(offset + len < 32768);
-
+    uint32_t aligned_offset;
+    uint32_t banked_offset;
     while (len > 0)
     {
-        data_cache_hit_writeback_invalidate(cache, 20);
-        _dma_read(cache, 0x08000000 + (offset), 20);
-        memcpy(cache + _off, src, CK_Cross_min(16, len));
-        data_cache_hit_writeback_invalidate(cache, len);
-        _dma_write(cache, 0x08000000 + offset, len);
-        src += 16;
-        offset += 16;
-        len -= 16;
+        //Make sure we're on a 32bit boundary in a 16 byte sector
+        aligned_offset = offset - (offset % 4);
+        aligned_offset = aligned_offset - (aligned_offset % 16);
+
+        //Select the right bank
+        if (aligned_offset > 0xFFFF)
+        {
+            banked_offset = aligned_offset - (0xFFFF + 1);
+            banked_offset |= (2 << 18);
+        }
+        else if (aligned_offset > 0x7FFF)
+        {
+            banked_offset = aligned_offset - (0x7FFF + 1);
+            banked_offset |= (1 << 18);
+        }
+        else
+        {
+            banked_offset = aligned_offset;
+        }
+
+        //Read a sector of data from SRAM
+        data_cache_hit_writeback_invalidate(sector_cache, 16);
+        _dma_read(sector_cache, 0x08000000 + (banked_offset & 0x07FFFFFF), 16);
+        int bw = CK_Cross_min(len, 16 - (offset - aligned_offset));
+        memcpy(sector_cache + (offset - aligned_offset), src, bw);
+        data_cache_hit_writeback_invalidate(sector_cache, 16);
+        _dma_write(sector_cache, 0x08000000 + (banked_offset & 0x07FFFFFF), 16);
+
+        src += bw;
+        offset += bw;
+        len -= bw;
     }
 }
 
