@@ -331,9 +331,10 @@ static void VL_N64_Present(void *surface, int scrlX, int scrlY, bool singleBuffe
     int current_y = 0; //The texture is offset on the Yaxis by this many pixels
     int chunk_size = x_per_loop * y_per_loop;
     assert(chunk_size <= 2048);
+    assert(y_per_loop > 0);
 
     rdp_attach_display(disp);
-    rdp_set_clipping(0, 0, VL_EGAVGA_GFX_WIDTH, CK_Cross_min(VL_EGAVGA_GFX_HEIGHT, src->height));
+    rdp_set_clipping(0, 0, CK_Cross_min(VL_EGAVGA_GFX_WIDTH, src->width), CK_Cross_min(VL_EGAVGA_GFX_HEIGHT, src->height));
 
     /* Not sure if we really need to do this. Save some cycles
     rdl_push(dl,
@@ -358,16 +359,11 @@ static void VL_N64_Present(void *surface, int scrlX, int scrlY, bool singleBuffe
         }
 
         //Load y_per_loop * x_per_loop pixels into TMEM, and apply palette from pal_slot
+        //Then draw to framebuffer
         rdl_push(dl,
             MRdpLoadTex8bpp(0, (uint32_t)ptr, x_per_loop, y_per_loop, x_per_loop, RDP_AUTO_TMEM_SLOT(0), RDP_AUTO_PITCH),
-            MRdpSetTile8bpp(1, RDP_AUTO_TMEM_SLOT(0), RDP_AUTO_PITCH, RDP_AUTO_TMEM_SLOT(pal_slot), x_per_loop, y_per_loop)
-        );
-
-        //Draw the texture to screen.
-        int sw = x_per_loop, sh = y_per_loop;
-        int x0 = 0, y0 = current_y;
-        rdl_push(dl,
-            RdpTextureRectangle1I(1, x0, y0, x0 + sw, y0 + y_per_loop),
+            MRdpSetTile8bpp(1, RDP_AUTO_TMEM_SLOT(0), RDP_AUTO_PITCH, RDP_AUTO_TMEM_SLOT(pal_slot), x_per_loop, y_per_loop),
+            RdpTextureRectangle1I(1, 0, current_y, 0 + x_per_loop, current_y + y_per_loop),
             RdpTextureRectangle2I(scrlX, 0, 4, 1)
         );
         current_y += y_per_loop;
