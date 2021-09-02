@@ -33,7 +33,7 @@ jobs:
            export BUILD_TAG=build-$(date -u +'%Y%m%d%H%M')
            echo "BUILD_TAG=$BUILD_TAG" >> $GITHUB_ENV
 
-    - if: github.event_name == 'push'
+    - if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
       name: Create Release
       uses: "marvinpinto/action-automatic-releases@latest"
       with:
