@@ -16,7 +16,6 @@ A port of Commander Keen "Commander Keen in Goodbye Galaxy!" to the Nintendo 64.
 - [ ] Still lots of CPU rendering (Blitting, blending, fills). Convert this to the RDP/RSP.
 
 ## Known issues
-- If the save game file exceeds 32kb it will corrupt. This happens if saving with many onscreen objects. Avoid this for now.
 - Ive had freezes on the odd occasion, particularly on the intro credits.
 - Enabling ADLIB sound in the menu will cause sound glitches. Just keep it on PC Speaker for now.
 
