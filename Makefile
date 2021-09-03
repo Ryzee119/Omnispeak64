@@ -1,4 +1,8 @@
-PROG_NAME = omnispeak
+ifndef EP
+$(error Keen Episode not specified: use make EP=4, 5 or 6)
+endif
+
+PROG_NAME = omnispeak_ep$(EP)
 
 ROOTDIR = $(N64_INST)
 GCCN64PREFIX = $(ROOTDIR)/bin/mips64-elf-
@@ -17,6 +21,7 @@ CFLAGS = -std=gnu99 -march=vr4300 -mtune=vr4300 -O2 -I$(ROOTDIR)/mips64-elf/incl
 LDFLAGS = -L$(ROOTDIR)/mips64-elf/lib -ldragon -lc -lm -ldragonsys -Tn64.ld --gc-sections
 N64TOOLFLAGS = -l 2M -h $(ROOTDIR)/mips64-elf/lib/header -t "Omnispeak"
 ED64ROMCONFIGFLAGS = --savetype sram768k
+CFLAGS += -DEP$(EP)
 
 ifeq ($(N64_BYTE_SWAP),true)
 $(PROG_NAME).v64: $(PROG_NAME).z64
@@ -110,7 +115,7 @@ $(PROG_NAME).elf: \
 	$(LD) -o $@ $^ $(LDFLAGS)
 
 $(PROG_NAME).dfs:
-	$(MKDFS) $@ ./filesystem/
+	$(MKDFS) $@ ./filesystem/CK$(EP)
 
 .PHONY: clean
 clean:
