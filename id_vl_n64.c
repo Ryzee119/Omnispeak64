@@ -86,9 +86,11 @@ static void VL_N64_SetVideoMode(int mode)
 static void *VL_N64_CreateSurface(int w, int h, VL_SurfaceUsage usage)
 {
     VL_N64_Surface *surf = (VL_N64_Surface *)malloc(sizeof(VL_N64_Surface));
+    assert(surf != NULL);
     surf->width = w;
     surf->height = h;
     surf->pixels = (uint8_t*)memalign(64, w * h);
+    assert(surf->pixels != NULL);
     return surf;
 }
 
@@ -168,7 +170,7 @@ static void VL_N64_SurfaceRect(void *dst_surface, int x, int y, int w, int h, in
 #else
     for (int _y = y; _y < y + h; ++_y)
     {
-        memset(((uint8_t *)surf->pixels) + _y * surf->width + x, colour, w);
+        memset(((uint8_t *)surf->pixels) + (_y * surf->width) + x, colour, CK_Cross_min(w, surf->width - x));
     }
 #endif
 }
