@@ -28,7 +28,7 @@ jobs:
            sudo npm install -g libdragon
            sudo libdragon download
            sudo libdragon start
-           sudo libdragon make
+           sudo libdragon make EP=4
            cp omnispeak/LICENSE LICENSE
            export BUILD_TAG=build-$(date -u +'%Y%m%d%H%M')
            echo "BUILD_TAG=$BUILD_TAG" >> $GITHUB_ENV
