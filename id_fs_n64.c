@@ -41,11 +41,25 @@ typedef struct sram_files_t
     uint32_t offset;
 } sram_files_t;
 
+#ifdef EP4
 static sram_files_t sram_files[SRAM_NUMFILES + 1] = {
     {"STUB", 0, 0}, //So we dont get a 0 handle.
     {"CONFIG.CK4", 2048, 0},
     {"SAVEGAM0.CK4", 98304 - 2048, 0},
 };
+#elif EP5
+static sram_files_t sram_files[SRAM_NUMFILES + 1] = {
+    {"STUB", 0, 0}, //So we dont get a 0 handle.
+    {"CONFIG.CK5", 2048, 0},
+    {"SAVEGAM0.CK5", 98304 - 2048, 0},
+};
+#elif EP6
+static sram_files_t sram_files[SRAM_NUMFILES + 1] = {
+    {"STUB", 0, 0}, //So we dont get a 0 handle.
+    {"CONFIG.CK6", 2048, 0},
+    {"SAVEGAM0.CK6", 98304 - 2048, 0},
+};
+#endif
 
 static int sram_get_handle_by_name(const char *name)
 {
