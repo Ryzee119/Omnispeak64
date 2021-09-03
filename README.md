@@ -12,17 +12,17 @@ A port of Commander Keen "Commander Keen in Goodbye Galaxy!" to the Nintendo 64.
 
 ## To-Do
 - [ ] OPL Adlib sound engine (Currently the performance is too bad to use). (PC Speaker driver is default).
-- [ ] Menu to select which Keen episode to load or likely separate ROMS for each episode.
 - [ ] Still lots of CPU rendering (Blitting, blending, fills). Convert this to the RDP/RSP.
 
 ## Known issues
-- Ive had freezes on the odd occasion, particularly on the intro credits.
+- Currently, this relies on SRAM96K support for game saves. Make sure your flashcart(or emulator is setup to use SRAM96kByte (or SRAM768kbit) save types.
 - Enabling ADLIB sound in the menu will cause sound glitches. Just keep it on PC Speaker for now.
 
 ## Download
 You can download a precompiled binary from the [Release section](https://github.com/Ryzee119/Omnispeak64/releases). This include the shareware version of the first episode.
-The other 2 episodes are supported, however need files from the original game. Ref https://github.com/sulix/omnispeak. Copy these to the `filesystem` folder and recompile.
-A menu to select the epsiode is in the todo list.
+The other 2 episodes are supported, however need files from the original game:
+* Copy Keen 5 files `AUDIO.CK5`, `EGAGRAPH.CK5` and `GAMEMAPS.CK6` into `filesystem/CK5` and recompile to play episode 5.
+* Copy Keen 6 V1.5 files `AUDIO.CK6`, `EGAGRAPH.CK6` and `GAMEMAPS.CK6` into `filesystem/CK6` and recompile to play episode 6.
 
 ## Build
 This was developed using the opensource N64 toolchain [libdragon](https://github.com/DragonMinded/libdragon). I developed it using the official docker container. The build process is something like this:
@@ -33,9 +33,17 @@ cd Omnispeak64
 npm install -g libdragon
 libdragon download
 libdragon start
-libdragon make
+
+#Build Episode 4 (The shareware game files are already in the filesystem/CK4 folder)
+libdragon make EP=4
+
+#Build Episode 5 (Make sure the game files are in the filesystem/CK5 folder)
+libdragon make EP=5
+
+#Build Episode 6 (Make sure the game files are in the filesystem/CK6 folder)
+libdragon make EP=6
 ```
-This should produce a `.z64` rom file.
+This should produce a `omnispead_epX.z64` rom file.
 
 ## Credits
 * [libdragon](https://github.com/DragonMinded/libdragon) : Licensed under the ["The Unlicense"](https://github.com/DragonMinded/libdragon/blob/trunk/LICENSE.md)
