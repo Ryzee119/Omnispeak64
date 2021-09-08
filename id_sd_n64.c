@@ -31,10 +31,9 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #include "ck_cross.h"
 
 static const int PC_PIT_RATE = 1193182;
-static const int SD_SFX_PART_RATE = 140;
 static const int SD_SOUND_PART_RATE_BASE = 1192030;
 static const int BITRATE = 9600;
-uint16_t ints_per_sec;
+static uint16_t ints_per_sec;
 
 static int16_t *stream = NULL;
 static bool SD_N64_IsLocked = false;
@@ -116,7 +115,7 @@ static void _audio_callback(short *buffer, size_t numsamples)
 static void SD_N64_SetTimer0(int16_t int_8_divisor)
 {
     //Create an interrupt that occurs at a certain frequency.
-    ints_per_sec = SD_SOUND_PART_RATE_BASE / int_8_divisor;
+    ints_per_sec = PC_PIT_RATE / int_8_divisor;
     delete_timer(t0_timer);
     t0_timer = new_timer(TIMER_TICKS(1000000 / ints_per_sec), TF_CONTINUOUS, _t0service);
     beep_samples_per_service = int_8_divisor * BITRATE / PC_PIT_RATE;
@@ -132,9 +131,9 @@ static void SD_N64_PCSpkOn(bool on, int freq)
 {
     backend_t = SPEAKER;
     beep_on = on;
-	beep_current_sample = 0;
-	beep_half_cycle_cnt = 0;
-	beep_half_cycle_cnt_max = BITRATE * freq;
+    beep_current_sample = 0;
+    beep_half_cycle_cnt = 0;
+    beep_half_cycle_cnt_max = BITRATE * freq;
 }
 
 static void SD_N64_Startup(void)
