@@ -1,19 +1,15 @@
-
-#include "id_sd.h"
-#include "id_us.h"
-#include "id_vl.h"
-#include "id_vl_private.h"
-
-#include "ck_cross.h"
+// SPDX-License-Identifier: GPL-2.0
 
 #include <stdlib.h>
 #include <malloc.h>
 #include <string.h>
 #include <libdragon.h>
+#include "n64_rdp/rdl.h"
+#include "n64_rdp/rdp_commands.h"
 
-#ifndef USE_SW_RENDERER
-#define USE_HW_RENDERER
-#endif
+#include "id_vl.h"
+#include "id_vl_private.h"
+#include "ck_cross.h"
 
 typedef struct VL_N64_Surface
 {
@@ -23,20 +19,13 @@ typedef struct VL_N64_Surface
 } VL_N64_Surface;
 
 static display_context_t disp = 0;
-uint32_t border_colour = 0xFFFFFFFF;
+static uint32_t border_colour = 0xFFFFFFFF;
 
-#ifdef USE_HW_RENDERER
-#include "n64_rdp/rdl.h"
-#include "n64_rdp/rdp_commands.h"
 #define NUM_DISPLAY_LISTS 2
 static RdpDisplayList *dls[NUM_DISPLAY_LISTS] = {NULL};
 static RdpDisplayList *dl;
 uint16_t *palette;
 uint8_t pal_slot = 0;
-#else
-static const size_t FRAMEBUFFER_SIZE = (VL_EGAVGA_GFX_WIDTH * VL_EGAVGA_GFX_HEIGHT * 2);
-sprite_t *staging_sprite;
-#endif
 
 static void VL_N64_SetVideoMode(int mode)
 {
@@ -49,7 +38,6 @@ static void VL_N64_SetVideoMode(int mode)
         uint32_t *vi_base = (uint32_t *)0xA4400000;
         vi_base[13] = 0x01000000 | (1024 * VL_EGAVGA_GFX_HEIGHT / 240);
 
-#ifdef USE_HW_RENDERER
         rdp_init();
         for (int i = 0; i < NUM_DISPLAY_LISTS; i++)
         {
@@ -58,28 +46,15 @@ static void VL_N64_SetVideoMode(int mode)
         }
         dl = dls[0];
         palette = (uint16_t *)memalign(64, sizeof(uint16_t) * 16);
-#else
-        staging_sprite = malloc(sizeof(sprite_t) + FRAMEBUFFER_SIZE);
-        staging_sprite->bitdepth = 2;
-        staging_sprite->width = VL_EGAVGA_GFX_WIDTH;
-        staging_sprite->height = VL_EGAVGA_GFX_HEIGHT;
-        staging_sprite->hslices = 1;
-        staging_sprite->vslices = 1;
-#endif
     }
     else
     {
-#ifdef USE_HW_RENDERER
-        free(palette); //FIXME, free aligned memory?
+        free(palette);
         for (int i = 0; i < NUM_DISPLAY_LISTS; i++)
         {
             rdl_free(dls[i]);
         }
         rdp_detach_display();
-#else
-        free(staging_sprite);
-        display_close();
-#endif
     }
 }
 
@@ -124,7 +99,7 @@ static void VL_N64_RefreshPaletteAndBorderColor(void *screen)
     g = VL_EGARGBColorTable[vl_emuegavgaadapter.bordercolor][1];
     b = VL_EGARGBColorTable[vl_emuegavgaadapter.bordercolor][2];
     border_colour = ((r >> 3) << 11) | ((g >> 3) << 6) | ((b >> 3) << 1) | 0x01; //rgba 5551
-#ifdef USE_HW_RENDERER
+
     for (int i = 0; i < 16; i++)
     {
         r = VL_EGARGBColorTable[vl_emuegavgaadapter.palette[i]][0];
@@ -140,7 +115,6 @@ static void VL_N64_RefreshPaletteAndBorderColor(void *screen)
              MRdpLoadPalette16(2, (uint32_t)palette, RDP_AUTO_TMEM_SLOT(pal_slot)),
              RdpSyncTile()
     );
-#endif
 }
 
 static int VL_N64_SurfacePGet(void *surface, int x, int y)
@@ -152,8 +126,8 @@ static int VL_N64_SurfacePGet(void *surface, int x, int y)
 static void VL_N64_SurfaceRect(void *dst_surface, int x, int y, int w, int h, int colour)
 {
     VL_N64_Surface *surf = (VL_N64_Surface *)dst_surface;
-#if 0//#ifdef USE_HW_RENDERER
-    //This mostly works but glitches out in the intro scenes?
+#if 0
+    //This mostly works but glitches out in the intro scenes? (There's a min rect size, 4bytes?, also a max too?)
     uint32_t _colour = (colour & 0xFF) << 24 | (colour & 0xFF) << 16 | (colour & 0xFF) << 8 | (colour & 0xFF);
     data_cache_hit_writeback_invalidate(surf->pixels, surf->width * surf->height);
     rdl_push(dl,
@@ -323,7 +297,7 @@ static void VL_N64_Present(void *surface, int scrlX, int scrlY, bool singleBuffe
     VL_N64_Surface *src = (VL_N64_Surface *)surface;
     //debugf("VL_N64_Present w: %d h: %d scrlx: %d scrly: %d\n", src->width, src->height, scrlX, scrlY);
     while (!(disp = display_lock())) {}
-#ifdef USE_HW_RENDERER
+
     data_cache_hit_writeback_invalidate(src->pixels,  src->width * src->height);
     //We draw the screen from top to bottom.
     //We can only draw 2048bytes per loop and for simplicity we want it to be a multiple
@@ -337,15 +311,6 @@ static void VL_N64_Present(void *surface, int scrlX, int scrlY, bool singleBuffe
 
     rdp_attach_display(disp);
     rdp_set_clipping(0, 0, CK_Cross_min(VL_EGAVGA_GFX_WIDTH, src->width), CK_Cross_min(VL_EGAVGA_GFX_HEIGHT, src->height));
-
-    /* Not sure if we really need to do this. Save some cycles
-    rdl_push(dl,
-        RdpSyncPipe(),
-        RdpSetOtherModes(SOM_CYCLE_FILL),
-        RdpSetFillColor16(border_colour),
-        RdpFillRectangleI(0, 0, VL_EGAVGA_GFX_WIDTH, VL_EGAVGA_GFX_HEIGHT)
-    );
-    */
 
     rdl_push(dl,
         RdpSyncPipe(),
@@ -384,30 +349,6 @@ static void VL_N64_Present(void *surface, int scrlX, int scrlY, bool singleBuffe
     }
     rdl_reset(dl);
     rdp_detach_display();
-#else //Software Renderer
-    uint16_t *dest = (uint16_t *)staging_sprite->data;
-    for (int _y = scrlY; _y < src->height; _y++)
-    {
-        if (_y >= VL_EGAVGA_GFX_HEIGHT)
-        {
-            break;
-        }
-        for (int _x = scrlX; _x < src->width; _x++)
-        {
-            if (_x >= VL_EGAVGA_GFX_WIDTH)
-            {
-                break;
-            }
-            uint8_t ega = src->pixels[_y * src->width + _x];
-            uint8_t r = VL_EGARGBColorTable[vl_emuegavgaadapter.palette[ega]][0];
-            uint8_t g = VL_EGARGBColorTable[vl_emuegavgaadapter.palette[ega]][1];
-            uint8_t b = VL_EGARGBColorTable[vl_emuegavgaadapter.palette[ega]][2];
-            uint16_t c = ((r >> 3) << 11) | ((g >> 3) << 6) | ((b >> 3) << 1) | 0x01; //rgba 5551
-            dest[(_y - scrlY) * VL_EGAVGA_GFX_WIDTH + _x - scrlX] = c;
-        }
-    }
-    graphics_draw_sprite(disp, 0, 0, staging_sprite);
-#endif
     display_show(disp);
 }
 
