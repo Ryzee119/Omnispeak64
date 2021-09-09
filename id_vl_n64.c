@@ -358,7 +358,8 @@ static void VL_N64_FlushParams()
 
 static void VL_N64_WaitVBLs(int vbls)
 {
-    //display_show already waits for vblank
+    long long micros = timer_ticks() + TIMER_TICKS_LL(1000000 * vbls / 35);
+    while (timer_ticks() < micros);
 }
 
 VL_Backend vl_n64_backend =
