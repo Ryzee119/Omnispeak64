@@ -43,7 +43,9 @@ libdragon make EP=5
 #Build Episode 6 (Make sure the game files are in the filesystem/CK6 folder)
 libdragon make EP=6
 ```
-This should produce a `omnispead_epX.z64` rom file.
+This should produce a `omnispeak_epX.z64` rom file.
+
+<img src="https://i.imgur.com/ZqfeGym.png" alt="basic" width="100%"/>  
 
 ## Credits
 * [libdragon](https://github.com/DragonMinded/libdragon) : Licensed under the ["The Unlicense"](https://github.com/DragonMinded/libdragon/blob/trunk/LICENSE.md)
