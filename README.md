@@ -11,12 +11,11 @@ A port of Commander Keen "Commander Keen in Goodbye Galaxy!" to the Nintendo 64.
 * Movement - Dpad or Analog stick 
 
 ## To-Do
-- [ ] OPL Adlib sound engine (Currently the performance is too bad to use). (PC Speaker driver is default).
 - [ ] Still lots of CPU rendering (Blitting, blending, fills). Convert this to the RDP/RSP.
 
-## Known issues
+## Warnings
 - Currently, this relies on SRAM96K support for game saves. Make sure your flashcart(or emulator is setup to use SRAM96kByte (or SRAM768kbit) save types.
-- Enabling ADLIB sound in the menu will cause sound glitches. Just keep it on PC Speaker for now.
+- All the Adlib SFX have been converted to WAV so we have original OPL adlib sound effects. This isn't how the original game does it, but we don't have adlib hardware or the processing power on the n64 for this. Additionally, due to hardware limitations the adlib music tracks have been replaced with custom MOD audio tracks. These are custom music tracks not in the original game, but still sound cool :). See below for music credit.
 
 ## Download
 You can download a precompiled binary from the [Release section](https://github.com/Ryzee119/Omnispeak64/releases). This include the shareware version of the first episode.
