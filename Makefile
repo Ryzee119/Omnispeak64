@@ -17,9 +17,9 @@ N64TOOL = $(ROOTDIR)/bin/n64tool
 ED64ROMCONFIG = $(ROOTDIR)/bin/ed64romconfig
 
 ASFLAGS = -mtune=vr4300 -march=vr4300
-CFLAGS = -std=gnu99 -march=vr4300 -mtune=vr4300 -O2 -I$(ROOTDIR)/mips64-elf/include -Iomnispeak/src -Ilibdragon/include -D_LIBDRAGON
-LDFLAGS = -L$(ROOTDIR)/mips64-elf/lib -ldragon -lc -lm -ldragonsys -Tn64.ld --gc-sections
-N64TOOLFLAGS = -l 2M -h $(ROOTDIR)/mips64-elf/lib/header -t "Omnispeak"
+CFLAGS = -std=gnu99 -march=vr4300 -mtune=vr4300 -O2 -I$(ROOTDIR)/mips64-elf/include -I$(ROOTDIR)/include -Iomnispeak/src -D_LIBDRAGON
+LDFLAGS = -L$(ROOTDIR)/mips64-elf/lib -L$(ROOTDIR)/lib -ldragon -lmikmod -lc -lm -ldragonsys -Tn64.ld --gc-sections
+N64TOOLFLAGS = -l 6M -h $(ROOTDIR)/mips64-elf/lib/header -t "Omnispeak"
 ED64ROMCONFIGFLAGS = --savetype sram768k
 CFLAGS += -DEP$(EP)
 
@@ -83,34 +83,7 @@ $(PROG_NAME).elf: \
 	omnispeak/src/id_us_2.o \
 	omnispeak/src/id_us_textscreen.o \
 	omnispeak/src/id_vh.o \
-	omnispeak/src/id_vl.o \
-	omnispeak/src/opl/nuked_opl3.o \
-	libdragon/src/n64sys.o \
-	libdragon/src/interrupt.o \
-	libdragon/src/inthandler.o \
-	libdragon/src/entrypoint.o \
-	libdragon/src/debug.o \
-	libdragon/src/usb.o \
-	libdragon/src/fatfs/ff.o \
-	libdragon/src/fatfs/ffunicode.o \
-	libdragon/src/dragonfs.o \
-	libdragon/src/audio.o \
-	libdragon/src/display.o \
-	libdragon/src/console.o \
-	libdragon/src/joybus.o \
-	libdragon/src/controller.o \
-	libdragon/src/rtc.o \
-	libdragon/src/eepromfs.o \
-	libdragon/src/mempak.o \
-	libdragon/src/tpak.o \
-	libdragon/src/graphics.o \
-	libdragon/src/rdp.o \
-	libdragon/src/rsp.o \
-	libdragon/src/dma.o \
-	libdragon/src/timer.o \
-	libdragon/src/version.o \
-	libdragon/src/exception.o \
-	libdragon/src/do_ctors.o
+	omnispeak/src/id_vl.o
 
 	$(LD) -o $@ $^ $(LDFLAGS)
 
