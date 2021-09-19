@@ -25,9 +25,10 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #include <string.h>
 #include <math.h>
 #include <libdragon.h>
-#include "opl/nuked_opl3.h"
+#include <mikmod.h>
 
 #include "id_sd.h"
+#include "id_ca.h"
 #include "ck_cross.h"
 
 static const int PC_PIT_RATE = 1193182;
@@ -35,80 +36,28 @@ static const int SD_SOUND_PART_RATE_BASE = 1192030;
 static const int BITRATE = 9600;
 static uint16_t ints_per_sec;
 
-static int16_t *stream = NULL;
+MIKMODAPI extern UWORD md_mode __attribute__((section (".data")));
+MIKMODAPI extern UWORD md_mixfreq __attribute__((section (".data")));
+extern ca_audinfo ca_audInfoE;
+static MODULE *bgm = NULL;
+static SAMPLE **sfx_samples = NULL;
 static bool SD_N64_IsLocked = false;
+static bool SD_N64_AudioSubsystem_Up = false;
 
 //Timing backend for the gamelogic which uses the sound system
 static timer_link_t *t0_timer;
 void SDL_t0Service(void);
 
-enum backend
-{
-    NONE,
-    ADLIB,
-    SPEAKER
-};
-enum backend backend_t = NONE;
-
-//OPL (for Adlib backend)
-static opl3_chip nuked_oplChip;
-static bool SD_N64_AudioSubsystem_Up = false;
-static bool generate_stream = false;
-
-//Beep Driver (For PC Speaker backend)
-static bool beep_on;
-static int16_t beep_current_sample;
-static uint32_t beep_half_cycle_cnt, beep_half_cycle_cnt_max;
-static uint32_t beep_samples_per_service;
-static int stream_cursor = 0;
-
 //Audio interrupts
 static void _t0service(int ovfl)
 {
     SDL_t0Service();
-
-    if (backend_t == ADLIB)
+    if (audio_can_write())
+        MikMod_Update();
+    if (!Player_Active() && bgm)
     {
-        //int chunk = audio_get_buffer_length() * ints_per_sec / BITRATE;
-        //OPL3_GenerateStream(&nuked_oplChip, &stream[stream_cursor], chunk);
-        //stream_cursor = (stream_cursor + (chunk * 2)) % (audio_get_buffer_length() * 2);
-        return;
-    }
-    //Each service a number of audio samples is generated (beep_samples_per_service)
-    //Put this in the audio stream
-    for (int i = 0; i < (beep_samples_per_service * 2); i += 2)
-    {
-        if (backend_t != SPEAKER)
-        {
-            break;
-        }
-        if (!beep_on)
-        {
-            stream[stream_cursor + 0] = 0;
-            stream[stream_cursor + 1] = 0;
-        }
-        else
-        {
-            stream[stream_cursor + 0] = beep_current_sample;
-            stream[stream_cursor + 1] = beep_current_sample;
-            beep_half_cycle_cnt += 2 * PC_PIT_RATE;
-            if (beep_half_cycle_cnt >= beep_half_cycle_cnt_max)
-            {
-                beep_half_cycle_cnt %= beep_half_cycle_cnt_max;
-                beep_current_sample = 0x5FFF - beep_current_sample;
-            }
-        }
-        stream_cursor = (stream_cursor + 2) % (audio_get_buffer_length() * 2);
-    }
-}
-
-static void _audio_callback(short *buffer, size_t numsamples)
-{
-    for (int i = 0; i < (numsamples * 2); i += 2)
-    {
-        int j = (stream_cursor + i) % (numsamples * 2);
-        buffer[i] = stream[j];
-        buffer[i + 1] = stream[j + 1];
+        //Loop background music
+        Player_SetPosition(0);
     }
 }
 
@@ -118,22 +67,14 @@ static void SD_N64_SetTimer0(int16_t int_8_divisor)
     ints_per_sec = PC_PIT_RATE / int_8_divisor;
     delete_timer(t0_timer);
     t0_timer = new_timer(TIMER_TICKS(1000000 / ints_per_sec), TF_CONTINUOUS, _t0service);
-    beep_samples_per_service = int_8_divisor * BITRATE / PC_PIT_RATE;
 }
 
 static void SD_N64_alOut(uint8_t reg, uint8_t val)
 {
-    backend_t = ADLIB;
-    OPL3_WriteReg(&nuked_oplChip, reg, val);
 }
 
 static void SD_N64_PCSpkOn(bool on, int freq)
 {
-    backend_t = SPEAKER;
-    beep_on = on;
-    beep_current_sample = 0;
-    beep_half_cycle_cnt = 0;
-    beep_half_cycle_cnt_max = BITRATE * freq;
 }
 
 static void SD_N64_Startup(void)
@@ -143,15 +84,23 @@ static void SD_N64_Startup(void)
         return;
     }
     audio_init(BITRATE, 2);
-    OPL3_Reset(&nuked_oplChip, BITRATE);
-    stream = malloc(2 * sizeof(short) * audio_get_buffer_length());
-    memset(stream, 0x00, 2 * sizeof(short) * audio_get_buffer_length());
-    audio_write_silence();
-    audio_write_silence();
-    audio_set_buffer_callback(&_audio_callback);
     init_interrupts();
     timer_init();
     t0_timer = NULL;
+
+    MikMod_RegisterAllDrivers();
+    MikMod_RegisterAllLoaders();
+    md_mode |= DMODE_16BITS;
+    md_mode |= DMODE_SOFT_MUSIC;
+    md_mode |= DMODE_SOFT_SNDFX;
+    md_mixfreq = audio_get_frequency();
+    MikMod_Init("");
+    MikMod_SetNumVoices(-1, 5);
+    MikMod_EnableOutput();
+
+    sfx_samples = (SAMPLE **)malloc(ca_audInfoE.numSounds * sizeof(SAMPLE *));
+    memset(sfx_samples, 0, ca_audInfoE.numSounds * sizeof(SAMPLE *));
+
     SD_N64_AudioSubsystem_Up = true;
 }
 
@@ -159,8 +108,16 @@ static void SD_N64_Shutdown(void)
 {
     if (SD_N64_AudioSubsystem_Up)
     {
-        free(stream);
+        for (int i = 0; i < ca_audInfoE.numSounds; i++)
+        {
+            if (sfx_samples[i])
+            {
+                Sample_Free(sfx_samples[i]);
+            }
+        }
+        free(sfx_samples);
         audio_close();
+        MikMod_Exit();
         SD_N64_AudioSubsystem_Up = false;
     }
 }
@@ -185,6 +142,43 @@ static void SD_N64_Unlock()
     }
     audio_pause(false);
     SD_N64_IsLocked = false;
+}
+
+void N64_LoadSound(int16_t sound)
+{
+    sound -= ca_audInfoE.startAdlibSounds;
+    assert(ca_audInfoE.numSounds);
+    char fn[32];
+    sprintf(fn, "rom://%03d.wav", sound);
+    if (!sfx_samples[sound])
+    {
+        sfx_samples[sound] = Sample_Load(fn);
+    }
+}
+
+void N64_PlayMusic(int16_t song)
+{
+    if (bgm)
+    {
+        Player_Stop();
+        Player_Free(bgm);
+    }
+    char fn[32];
+    sprintf(fn, "rom://m%03d.mod", song);
+    bgm = Player_Load(fn, 127, 0);
+    if (bgm)
+    {
+        Player_Start(bgm);
+    }
+    Player_SetVolume(32);
+}
+
+void N64_PlaySound(soundnames sound)
+{
+    if (sfx_samples[sound])
+    {
+        Sample_Play(sfx_samples[sound], 0, 0);
+    }
 }
 
 static SD_Backend sd_n64_backend = {
