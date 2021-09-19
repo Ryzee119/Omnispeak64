@@ -52,3 +52,10 @@ This should produce a `omnispeak_epX.z64` rom file.
 * [omnispeak](https://github.com/sulix/omnispeak) : Licensed under [GNU General Public License v2.0](https://github.com/sulix/omnispeak/blob/master/LICENSE)
 * [Raskys mvs64 port](https://github.com/rasky/mvs64) : His RDP rendering work was extremely helpful.
 * [3D Realms](https://3drealms.com/catalog/commander-keen-goodbye-galaxy_8/). Buy the game to support the developers. [GOG](https://www.gog.com/game/commander_keen_complete_pack), [Steam](https://store.steampowered.com/app/9180/Commander_Keen/).
+
+## Music
+* [basilisk - galapagos](https://modarchive.org/index.php?request=view_by_moduleid&query=98833) : Licensed under the [Mod Archive Distribution license](https://modarchive.org/index.php?terms-upload)
+* [badtracks - hiscore](https://modarchive.org/index.php?request=view_by_moduleid&query=87718) : Licensed under the [Mod Archive Distribution license](https://modarchive.org/index.php?terms-upload)
+* [basehead - gameover](https://modarchive.org/index.php?request=view_by_moduleid&query=158158) : Licensed under the [Mod Archive Distribution license](https://modarchive.org/index.php?terms-upload)
+* [cascade](https://modarchive.org/index.php?request=view_by_moduleid&query=35296) : Licensed under the [Mod Archive Distribution license](https://modarchive.org/index.php?terms-upload)
+* [first & last](https://modarchive.org/index.php?request=view_by_moduleid&query=81398) : Licensed under the [Mod Archive Distribution license](https://modarchive.org/index.php?terms-upload)
