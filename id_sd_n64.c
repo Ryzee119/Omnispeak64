@@ -75,7 +75,7 @@ static void music_read(void *ctx, samplebuffer_t *sbuf, int wpos, int wlen, bool
 static void _t0service(int ovfl)
 {
     SDL_t0Service();
-    if (audio_can_write())
+    if (audio_can_write() && (*SP_STATUS & SP_STATUS_HALTED))
     {
         short *buf = audio_write_begin();
         mixer_poll(buf, audio_get_buffer_length());
@@ -118,9 +118,9 @@ static void SD_N64_Startup(void)
     music.bits = ADLIB_BYTES_PER_SAMPLE * 8;
     music.channels = ADLIB_NUM_CHANNELS;
     music.frequency = ADLIB_SAMPLE_RATE;
-    music.len = 0;
+    music.len = WAVEFORM_UNKNOWN_LEN;
     music.read = music_read;
-    music.loop_len = WAVEFORM_UNKNOWN_LEN;
+    music.loop_len = 0;
     music.ctx = (void *)&music;
     mixer_ch_play(ADLIB_MIXER_CHANNEL, &music);
     SD_N64_AudioSubsystem_Up = true;
