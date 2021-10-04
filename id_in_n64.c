@@ -40,8 +40,6 @@ static void IN_N64_PumpEvents()
     if (keys.c[0].C_down)  IN_HandleKeyDown(IN_SC_Enter, 0);
     if (keys.c[0].C_left)  IN_HandleKeyDown(IN_SC_Enter, 0);
     if (keys.c[0].C_right) IN_HandleKeyDown(IN_SC_Enter, 0);
-    //Make B work on the main menu
-    if (keys.c[0].B)       IN_HandleKeyDown(IN_SC_B, 0);
 
     keys = get_keys_up();
     if (keys.c[0].start)   IN_HandleKeyUp(IN_SC_Escape, 0);
@@ -50,7 +48,6 @@ static void IN_N64_PumpEvents()
     if (keys.c[0].C_down)  IN_HandleKeyUp(IN_SC_Enter, 0);
     if (keys.c[0].C_left)  IN_HandleKeyUp(IN_SC_Enter, 0);
     if (keys.c[0].C_right) IN_HandleKeyUp(IN_SC_Enter, 0);
-    if (keys.c[0].B)       IN_HandleKeyUp(IN_SC_B, 0);
 }
 
 static void IN_N64_WaitKey()
@@ -63,9 +60,9 @@ static void IN_N64_Startup(bool disableJoysticks)
     init_interrupts();
     controller_init();
     IN_SetControlType(0, IN_ctrl_Joystick1);
-    IN_SetJoyConf(IN_joy_jump, IN_joy_jump);
-    IN_SetJoyConf(IN_joy_pogo, IN_joy_pogo);
-    IN_SetJoyConf(IN_joy_fire, IN_joy_fire);
+    IN_SetJoyConf(IN_joy_jump, 0);
+    IN_SetJoyConf(IN_joy_pogo, 1);
+    IN_SetJoyConf(IN_joy_fire, 2);
     IN_SetJoyConf(IN_joy_deadzone, 60);
 }
 
@@ -149,10 +146,10 @@ static uint16_t IN_N64_JoyGetButtons(int joystick)
     }
 
     if (keys.c[joystick].A)       mask |= (1 << IN_joy_jump);
-    if (keys.c[joystick].B)       mask |= (1 << IN_joy_fire);
+    if (keys.c[joystick].B)       mask |= (1 << IN_joy_pogo);
     if (keys.c[joystick].start)   mask |= (1 << IN_joy_menu);
     if (keys.c[joystick].Z)       mask |= (1 << IN_joy_fire);
-    if (keys.c[joystick].R)       mask |= (1 << IN_joy_pogo);
+    if (keys.c[joystick].R)       mask |= (1 << IN_joy_fire);
     if (keys.c[joystick].L)       mask |= (1 << IN_joy_status);
     if (keys.c[joystick].C_up)    mask |= (1 << IN_joy_status);
     if (keys.c[joystick].C_down)  mask |= (1 << IN_joy_status);
