@@ -4,8 +4,8 @@ A port of Commander Keen "Commander Keen in Goodbye Galaxy!" to the Nintendo 64.
 
 ## Controls
 * Jump - A
-* Fire - B or Z
-* Pogo - R
+* Fire - Z or R
+* Pogo - B
 * Main Menu - Start
 * Status Menu - C-Buttons
 * Movement - Dpad or Analog stick 
