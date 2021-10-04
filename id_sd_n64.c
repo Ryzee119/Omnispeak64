@@ -25,21 +25,25 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #include <string.h>
 #include <math.h>
 #include <libdragon.h>
-#include <mikmod.h>
+#include "opl/dbopl.h"
 
 #include "id_sd.h"
 #include "id_ca.h"
 #include "ck_cross.h"
 
-static const int PC_PIT_RATE = 1193182;
-static const int SD_SOUND_PART_RATE_BASE = 1192030;
-static const int BITRATE = 9600;
+#define ADLIB_NUM_CHANNELS 1
+#define ADLIB_BYTES_PER_SAMPLE 2
+#define ADLIB_SAMPLE_RATE 19200
+#define ADLIB_MIXER_CHANNEL 0
 
-MIKMODAPI extern UWORD md_mode __attribute__((section (".data")));
-MIKMODAPI extern UWORD md_mixfreq __attribute__((section (".data")));
-extern ca_audinfo ca_audInfoE;
-static MODULE *bgm = NULL;
-static SAMPLE **sfx_samples = NULL;
+extern bool sd_musicStarted;
+extern volatile int sd_al_currentSfxLength;
+static waveform_t music;
+static Chip oplChip;
+
+static const int PC_PIT_RATE = 1193182;
+static const int AUDIO_BITRATE = 19200;
+
 static bool SD_N64_IsLocked = false;
 static bool SD_N64_AudioSubsystem_Up = false;
 
@@ -47,18 +51,35 @@ static bool SD_N64_AudioSubsystem_Up = false;
 static timer_link_t *t0_timer;
 void SDL_t0Service(void);
 
+static void music_read(void *ctx, samplebuffer_t *sbuf, int wpos, int wlen, bool seeking)
+{
+    (void)ctx;
+    int16_t *dst = CachedAddr(samplebuffer_append(sbuf, wlen));
+    if (sd_musicStarted || sd_al_currentSfxLength)
+    {
+        int32_t _data[wlen];
+        Chip__GenerateBlock2(&oplChip, wlen, _data);
+        for (int i = 0; i < wlen; i++)
+        {
+            dst[i] = (int16_t)(_data[i]);
+        }
+    }
+    else
+    {
+        memset(dst, 0, wlen * ADLIB_NUM_CHANNELS * ADLIB_BYTES_PER_SAMPLE);
+    }
+    data_cache_hit_writeback_invalidate(dst, wlen * ADLIB_NUM_CHANNELS * ADLIB_BYTES_PER_SAMPLE);
+}
+
 //Audio interrupts
 static void _t0service(int ovfl)
 {
     SDL_t0Service();
     if (audio_can_write())
     {
-        MikMod_Update();
-    }
-    //Loop background music
-    if (!Player_Active() && bgm)
-    {
-        Player_SetPosition(0);
+        short *buf = audio_write_begin();
+        mixer_poll(buf, audio_get_buffer_length());
+        audio_write_end();
     }
 }
 
@@ -72,6 +93,7 @@ static void SD_N64_SetTimer0(int16_t int_8_divisor)
 
 static void SD_N64_alOut(uint8_t reg, uint8_t val)
 {
+    Chip__WriteReg(&oplChip, reg, val);
 }
 
 static void SD_N64_PCSpkOn(bool on, int freq)
@@ -85,24 +107,22 @@ static void SD_N64_Startup(void)
         return;
     }
 
-    audio_init(BITRATE, 2);
-    init_interrupts();
-    timer_init();
-    t0_timer = NULL;
+    audio_init(AUDIO_BITRATE, 2);
+    mixer_init(16);
 
-    MikMod_RegisterAllDrivers();
-    MikMod_RegisterAllLoaders();
-    md_mode |= DMODE_16BITS;
-    md_mode |= DMODE_SOFT_MUSIC;
-    md_mode |= DMODE_SOFT_SNDFX;
-    md_mixfreq = audio_get_frequency();
-    MikMod_Init("");
-    MikMod_SetNumVoices(-1, 5);
-    MikMod_EnableOutput();
+    //Init adlib engine for music
+    DBOPL_InitTables();
+    Chip__Chip(&oplChip);
+    Chip__Setup(&oplChip, ADLIB_SAMPLE_RATE);
 
-    sfx_samples = (SAMPLE **)malloc(ca_audInfoE.numSounds * sizeof(SAMPLE *));
-    memset(sfx_samples, 0, ca_audInfoE.numSounds * sizeof(SAMPLE *));
-
+    music.bits = ADLIB_BYTES_PER_SAMPLE * 8;
+    music.channels = ADLIB_NUM_CHANNELS;
+    music.frequency = ADLIB_SAMPLE_RATE;
+    music.len = 0;
+    music.read = music_read;
+    music.loop_len = WAVEFORM_UNKNOWN_LEN;
+    music.ctx = (void *)&music;
+    mixer_ch_play(ADLIB_MIXER_CHANNEL, &music);
     SD_N64_AudioSubsystem_Up = true;
 }
 
@@ -112,26 +132,7 @@ static void SD_N64_Shutdown(void)
     {
         return;
     }
-
-    MikMod_DisableOutput();
-
-    for (int i = 0; i < ca_audInfoE.numSounds; i++)
-    {
-        if (sfx_samples[i])
-        {
-            Sample_Free(sfx_samples[i]);
-        }
-    }
-    free(sfx_samples);
-
-    if (bgm)
-    {
-        Player_Stop();
-        Player_Free(bgm);
-    }
-
     audio_close();
-    MikMod_Exit();
     SD_N64_AudioSubsystem_Up = false;
 }
 
@@ -141,7 +142,6 @@ static void SD_N64_Lock()
     {
         return;
     }
-    MikMod_Lock();
     SD_N64_IsLocked = true;
 }
 
@@ -151,47 +151,20 @@ static void SD_N64_Unlock()
     {
         return;
     }
-    MikMod_Unlock();
     SD_N64_IsLocked = false;
 }
 
 void N64_LoadSound(int16_t sound)
 {
-    //SFX file names are 0XX.wav
-    sound -= ca_audInfoE.startAdlibSounds;
-    char fn[32];
-    sprintf(fn, "rom://%03d.wav", sound);
-    assert(sound <= ca_audInfoE.numSounds);
-    if (!sfx_samples[sound])
-    {
-        sfx_samples[sound] = Sample_Load(fn);
-    }
 }
 
 void N64_PlayMusic(int16_t song)
 {
-    //Music file names are m00X.wav
-    char fn[32];
-    sprintf(fn, "rom://m%03d.mod", song);
-    if (bgm)
-    {
-        Player_Stop();
-        Player_Free(bgm);
-    }
-    bgm = Player_Load(fn, 127, 0);
-    if (bgm)
-    {
-        Player_Start(bgm);
-        Player_SetVolume(32);
-    }
 }
 
-void N64_PlaySound(soundnames sound)
+void N64_PlaySound(int16_t sound)
 {
-    if (sfx_samples[sound])
-    {
-        Sample_Play(sfx_samples[sound], 0, 0);
-    }
+
 }
 
 static SD_Backend sd_n64_backend = {
