@@ -4,8 +4,7 @@
 #include <malloc.h>
 #include <string.h>
 #include <libdragon.h>
-#include "n64_rdp/rdl.h"
-#include "n64_rdp/rdp_commands.h"
+#include "ugfx.h"
 
 #include "id_vl.h"
 #include "id_vl_private.h"
@@ -19,42 +18,36 @@ typedef struct VL_N64_Surface
 } VL_N64_Surface;
 
 static display_context_t disp = 0;
+static ugfx_buffer_t *render_commands;
+static uint32_t display_width;
+static uint32_t display_height;
 static uint32_t border_colour = 0xFFFFFFFF;
 
-#define NUM_DISPLAY_LISTS 2
-static RdpDisplayList *dls[NUM_DISPLAY_LISTS] = {NULL};
-static RdpDisplayList *dl;
 uint16_t *palette;
-uint8_t pal_slot = 0;
+uint8_t pal_slot = 1;
+static bool palette_dirty = false;
 
 static void VL_N64_SetVideoMode(int mode)
 {
     if (mode == 0xD)
     {
-        init_interrupts();
-        display_init(RESOLUTION_320x240, DEPTH_16_BPP, 2, GAMMA_NONE, ANTIALIAS_RESAMPLE);
+        display_init(RESOLUTION_320x240, DEPTH_16_BPP, 2, GAMMA_NONE, ANTIALIAS_RESAMPLE_FETCH_ALWAYS);
+        ugfx_init(UGFX_DEFAULT_RDP_BUFFER_SIZE);
 
-        //Scale to EVGA 320x200 to 320x240. Original DOS version is 4:3
-        uint32_t *vi_base = (uint32_t *)0xA4400000;
-        vi_base[13] = 0x01000000 | (1024 * VL_EGAVGA_GFX_HEIGHT / 240);
+        display_width = 320;
+        display_height = 240;
 
-        rdp_init();
-        for (int i = 0; i < NUM_DISPLAY_LISTS; i++)
-        {
-            dls[i] = rdl_heap_alloc(2048);
-            rdl_reset(dls[i]);
-        }
-        dl = dls[0];
+        render_commands = ugfx_buffer_new(2048);
+        assert(render_commands != NULL);
+
         palette = (uint16_t *)memalign(64, sizeof(uint16_t) * 16);
+        assert(palette != NULL);
     }
     else
     {
+        ugfx_close();
+        ugfx_buffer_free(render_commands);
         free(palette);
-        for (int i = 0; i < NUM_DISPLAY_LISTS; i++)
-        {
-            rdl_free(dls[i]);
-        }
-        rdp_detach_display();
     }
 }
 
@@ -109,12 +102,7 @@ static void VL_N64_RefreshPaletteAndBorderColor(void *screen)
         palette[i] = c;
     }
     data_cache_hit_writeback_invalidate(palette, 16 * 2);
-    //Load the palette into TMEM
-    rdl_push(dl,
-             RdpSyncTile(),
-             MRdpLoadPalette16(2, (uint32_t)palette, RDP_AUTO_TMEM_SLOT(pal_slot)),
-             RdpSyncTile()
-    );
+    palette_dirty = true;
 }
 
 static int VL_N64_SurfacePGet(void *surface, int x, int y)
@@ -295,60 +283,80 @@ static void VL_N64_ScrollSurface(void *surface, int x, int y)
 static void VL_N64_Present(void *surface, int scrlX, int scrlY, bool singleBuffered)
 {
     VL_N64_Surface *src = (VL_N64_Surface *)surface;
-    //debugf("VL_N64_Present w: %d h: %d scrlx: %d scrly: %d\n", src->width, src->height, scrlX, scrlY);
-    while (!(disp = display_lock())) {}
+    data_cache_hit_writeback_invalidate(src->pixels, src->width * src->height);
 
-    data_cache_hit_writeback_invalidate(src->pixels,  src->width * src->height);
     //We draw the screen from top to bottom.
     //We can only draw 2048bytes per loop and for simplicity we want it to be a multiple
     //of the width.
     int x_per_loop = src->width;
-    int y_per_loop = 2048 / src->width;
-    int current_y = 0; //The texture is offset on the Yaxis by this many pixels
+    int y_per_loop = (2048 / src->width) >=5 ? 5 : 1;
+    int current_y = 0;
     int chunk_size = x_per_loop * y_per_loop;
     assert(chunk_size <= 2048);
-    assert(y_per_loop > 0);
 
-    rdp_attach_display(disp);
-    rdp_set_clipping(0, 0, CK_Cross_min(VL_EGAVGA_GFX_WIDTH, src->width), CK_Cross_min(VL_EGAVGA_GFX_HEIGHT, src->height));
+    while (!(disp = display_lock()));
+    ugfx_buffer_clear(render_commands);
+    ugfx_buffer_push(render_commands, ugfx_set_display(disp));
+    ugfx_buffer_push(render_commands, ugfx_set_scissor(0, 0, display_width << 2, display_height << 2, UGFX_SCISSOR_DEFAULT));
+    ugfx_buffer_push(render_commands, ugfx_set_other_modes(UGFX_CYCLE_COPY | UGFX_TLUT_RGBA16));
+    ugfx_buffer_push(render_commands, ugfx_sync_pipe());
 
-    rdl_push(dl,
-        RdpSyncPipe(),
-        RdpSetOtherModes(SOM_CYCLE_COPY | SOM_ALPHA_COMPARE | SOM_ENABLE_TLUT_RGB16)
-    );
+    if (palette_dirty)
+    {
+        ugfx_buffer_push(render_commands, ugfx_set_tile(UGFX_FORMAT_INDEX, UGFX_PIXEL_SIZE_4B, 16, 0x800 + (pal_slot * 0x100), 2, 0, 0, 0, 0, 0, 0, 0, 0, 0));
+        ugfx_buffer_push(render_commands, ugfx_set_texture_image((uint32_t)palette, UGFX_FORMAT_INDEX, UGFX_PIXEL_SIZE_16B, 16 - 1));
+        ugfx_buffer_push(render_commands, ugfx_load_tlut(0 << 2, 0, 15 << 2, 0, 2));
+        ugfx_buffer_push(render_commands, ugfx_sync_tile());
+        palette_dirty = false;
+    }
 
     uint8_t *ptr = src->pixels + scrlY * x_per_loop;
-    while(current_y < src->height)
+    while (current_y < 240)
     {
-        if (current_y >= VL_EGAVGA_GFX_HEIGHT)
+        //Load the 8bit texture into tile 0:
+        ugfx_buffer_push(render_commands, ugfx_set_tile(UGFX_FORMAT_INDEX, UGFX_PIXEL_SIZE_8B, x_per_loop / 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0));
+        ugfx_buffer_push(render_commands, ugfx_set_texture_image((uint32_t)ptr, UGFX_FORMAT_INDEX, UGFX_PIXEL_SIZE_8B, x_per_loop - 1));
+        ugfx_buffer_push(render_commands, ugfx_load_tile(0 << 2, 0 << 2, (x_per_loop - 1) << 2, (y_per_loop - 1) << 2, 0));
+        ugfx_buffer_push(render_commands, ugfx_sync_tile());
+
+        //Apply the palette onto the loaded tile, then set it to tile 1:
+        ugfx_buffer_push(render_commands, ugfx_set_tile(UGFX_FORMAT_INDEX, UGFX_PIXEL_SIZE_8B, x_per_loop / 8, 0, 1, pal_slot, 0, 0, 0, 0, 0, 0, 0, 0));
+        ugfx_buffer_push(render_commands, ugfx_set_tile_size(0, 0, (x_per_loop - 1) << 2, (y_per_loop - 1) << 2, 1));
+
+        //Draw a line from tile 1
+        ugfx_buffer_push(render_commands, ugfx_texture_rectangle(1, 0 << 2, current_y << 2, x_per_loop << 2, (current_y + 1) << 2));
+        ugfx_buffer_push(render_commands, ugfx_texture_rectangle_tcoords(scrlX << 5, 0 << 5, 4 << 10, 1 << 10));
+
+        if (y_per_loop == 5)
         {
-            break;
+            current_y++;
+            //Can draw 5 lines at once at this games standard surface width, note the 1st line is drawn twice so that over 200 lines it is scaled to 240)
+            ugfx_buffer_push(render_commands, ugfx_texture_rectangle(1, 0 << 2, current_y << 2, x_per_loop << 2, (current_y + y_per_loop - 1) << 2));
+            ugfx_buffer_push(render_commands, ugfx_texture_rectangle_tcoords(scrlX << 5, 0 << 5, 4 << 10, 1 << 10));
+        }
+        else if (current_y % 5 == 0)
+        {
+            current_y++;
+            ugfx_buffer_push(render_commands, ugfx_texture_rectangle(1, 0 << 2, current_y << 2, x_per_loop << 2, (current_y + 1) << 2));
+            ugfx_buffer_push(render_commands, ugfx_texture_rectangle_tcoords(scrlX << 5, 0 << 5, 4 << 10, 1 << 10));
         }
 
-        //Load y_per_loop * x_per_loop pixels into TMEM, and apply palette from pal_slot
-        //Then draw to framebuffer
-        rdl_push(dl,
-            MRdpLoadTex8bpp(0, (uint32_t)ptr, x_per_loop, y_per_loop, x_per_loop, RDP_AUTO_TMEM_SLOT(0), RDP_AUTO_PITCH),
-            MRdpSetTile8bpp(1, RDP_AUTO_TMEM_SLOT(0), RDP_AUTO_PITCH, RDP_AUTO_TMEM_SLOT(pal_slot), x_per_loop, y_per_loop),
-            RdpTextureRectangle1I(1, 0, current_y, 0 + x_per_loop, current_y + y_per_loop),
-            RdpTextureRectangle2I(scrlX, 0, 4, 1)
-        );
         current_y += y_per_loop;
         ptr += chunk_size;
     }
 
-    rdl_flush(dl);
-    rdl_exec(dl);
-    for (int i = 0; i < NUM_DISPLAY_LISTS; i++)
-    {
-        if (dl == dls[i])
-        {
-            dl = dls[(i + 1) % NUM_DISPLAY_LISTS];
-            break;
-        }
-    }
-    rdl_reset(dl);
-    rdp_detach_display();
+    ugfx_buffer_push(render_commands, ugfx_sync_pipe());
+    ugfx_buffer_push(render_commands, ugfx_sync_full());
+    ugfx_buffer_push(render_commands, ugfx_finalize());
+
+    data_cache_hit_writeback(ugfx_buffer_data(render_commands), ugfx_buffer_length(render_commands) * sizeof(ugfx_command_t));
+    ugfx_load(ugfx_buffer_data(render_commands), ugfx_buffer_length(render_commands));
+
+    rsp_run_async();
+    short *buf = audio_write_begin();
+    mixer_poll(buf, audio_get_buffer_length());
+    audio_write_end();
+    rsp_wait();
     display_show(disp);
 }
 
