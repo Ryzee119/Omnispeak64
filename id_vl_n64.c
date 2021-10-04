@@ -294,7 +294,6 @@ static void VL_N64_Present(void *surface, int scrlX, int scrlY, bool singleBuffe
     int chunk_size = x_per_loop * y_per_loop;
     assert(chunk_size <= 2048);
 
-    while (!(disp = display_lock()));
     ugfx_buffer_clear(render_commands);
     ugfx_buffer_push(render_commands, ugfx_set_display(disp));
     ugfx_buffer_push(render_commands, ugfx_set_scissor(0, 0, display_width << 2, display_height << 2, UGFX_SCISSOR_DEFAULT));
@@ -352,12 +351,9 @@ static void VL_N64_Present(void *surface, int scrlX, int scrlY, bool singleBuffe
     data_cache_hit_writeback(ugfx_buffer_data(render_commands), ugfx_buffer_length(render_commands) * sizeof(ugfx_command_t));
     ugfx_load(ugfx_buffer_data(render_commands), ugfx_buffer_length(render_commands));
 
-    rsp_run_async();
-    short *buf = audio_write_begin();
-    mixer_poll(buf, audio_get_buffer_length());
-    audio_write_end();
-    rsp_wait();
+    rsp_run();
     display_show(disp);
+    while (!(disp = display_lock()));
 }
 
 static void VL_N64_FlushParams()
@@ -366,7 +362,7 @@ static void VL_N64_FlushParams()
 
 static void VL_N64_WaitVBLs(int vbls)
 {
-    long long micros = timer_ticks() + TIMER_TICKS_LL(1000000 * vbls / 35);
+    long long micros = timer_ticks() + TIMER_TICKS_LL(1000000 * vbls / 60);
     while (timer_ticks() < micros);
 }
 
