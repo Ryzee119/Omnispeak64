@@ -27,20 +27,22 @@ jobs:
       run: |
            export BUILD_TAG=build-$(date -u +'%Y%m%d%H%M')
            echo "BUILD_TAG=$BUILD_TAG" >> $GITHUB_ENV
-           sudo npm install -g libdragon
-           sudo libdragon download
-           sudo libdragon start
-           git clone https://github.com/rasky/libdragon.git
+           wget https://github.com/anacierdem/libdragon-docker/releases/download/v10.0.0/libdragon-linux-x86_64.tar.gz
+           tar xvzf libdragon-linux-x86_64.tar.gz
+           mv libdragon _libdragon
+           sudo chmod +x _libdragon
+           ./_libdragon init
            cd libdragon
-           git checkout mixer
-           docker exec libdragon cp libdragon/include/rsp.inc /usr/local/mips64-elf/include
-           docker exec libdragon cp libdragon/include/rsp_dma.inc /usr/local/mips64-elf/include
-           docker exec -w /libdragon/libdragon libdragon make
-           docker exec -w /libdragon/libdragon libdragon make install
+           git remote add mixer https://github.com/rasky/libdragon.git
+           git fetch mixer
+           git checkout mixer/mixer
+           cd ..
+           ./_libdragon update
  
     - name: Compile
       run: |
-           libdragon make EP=4
+           ./_libdragon make EP=4
+           ./_libdragon make EP=4 ed64patch
            cp omnispeak/LICENSE LICENSE
 
     - if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}

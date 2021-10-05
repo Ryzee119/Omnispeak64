@@ -6,7 +6,7 @@ PROG_NAME = omnispeak64_ep$(EP)
 SOURCE_DIR = $(CURDIR)
 BUILD_DIR = build
 OMNI_DIR = omnispeak/src
-include n64.mk
+include $(N64_INST)/include/n64.mk
 
 N64_CFLAGS = -DN64 -falign-functions=32 -ffunction-sections -fdata-sections -std=gnu99 -march=vr4300 -mtune=vr4300 -O2 -fdiagnostics-color=always -I$(ROOTDIR)/mips64-elf/include
 CFLAGS += -I$(OMNI_DIR) -I$(N64_ROOTDIR)/include -DEP$(EP) -In64/ugfx -D_CONSOLE -DFS_DEFAULT_KEEN_PATH='"rom:/"' -DFS_DEFAULT_USER_PATH='"sram:/"'
@@ -64,8 +64,6 @@ SRCS = \
 	$(OMNI_DIR)/id_vh.c \
 	$(OMNI_DIR)/id_vl.o
 
-ED64ROMCONFIGFLAGS = --savetype sram256k
-
 all: $(PROG_NAME).z64
 
 $(BUILD_DIR)/$(PROG_NAME).dfs: $(wildcard filesystem/CK$(EP)/*)
@@ -74,6 +72,11 @@ $(BUILD_DIR)/$(PROG_NAME).elf: $(SRCS:%.c=$(BUILD_DIR)/%.o) $(BUILD_DIR)/n64/ugf
 
 $(PROG_NAME).z64: N64_ROM_TITLE="$(PROG_NAME)"
 $(PROG_NAME).z64: $(BUILD_DIR)/$(PROG_NAME).dfs
+
+ed64patch:
+	@mkdir -p $(dir $@)
+	@$(N64_ROOTDIR)/bin/ed64romconfig --savetype sram768k $(PROG_NAME).z64
+	@echo "    [ED64] $(PROG_NAME).z64"
 
 clean:
 	rm -rf $(BUILD_DIR) $(PROG_NAME).z64 $(ASSETS_CONV)
