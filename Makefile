@@ -2,15 +2,18 @@ ifndef EP
 $(error Omnispeak Episode not specified: use make EP=4, 5 or 6)
 endif
 
-PROG_NAME = omnispeak64_ep$(EP)
 SOURCE_DIR = $(CURDIR)
 BUILD_DIR = build
 OMNI_DIR = omnispeak/src
 include $(N64_INST)/include/n64.mk
 
-N64_CFLAGS = -DN64 -falign-functions=32 -ffunction-sections -fdata-sections -std=gnu99 -march=vr4300 -mtune=vr4300 -O2 -fdiagnostics-color=always -I$(ROOTDIR)/mips64-elf/include
-CFLAGS += -I$(OMNI_DIR) -I$(N64_ROOTDIR)/include -DEP$(EP) -In64/ugfx -D_CONSOLE -DFS_DEFAULT_KEEN_PATH='"rom:/"' -DFS_DEFAULT_USER_PATH='"sram:/"'
-LDFLAGS += -L$(N64_ROOTDIR)/lib -L$(CURDIR)
+PROG_NAME = omnispeak64_ep$(EP)
+N64_ROM_SAVETYPE = sram768k
+N64_ROM_REGIONFREE = true
+
+N64_CFLAGS += -Wno-error #Disable -Werror from n64.mk
+CFLAGS += -I$(OMNI_DIR) -DEP$(EP) -In64/ugfx -D_CONSOLE
+CFLAGS += -DFS_DEFAULT_KEEN_PATH='"rom:/"' -DFS_DEFAULT_USER_PATH='"sram:/"'
 
 SRCS = \
 	n64_main.c \
@@ -69,14 +72,8 @@ all: $(PROG_NAME).z64
 $(BUILD_DIR)/$(PROG_NAME).dfs: $(wildcard filesystem/CK$(EP)/*)
 $(BUILD_DIR)/$(PROG_NAME).elf: $(SRCS:%.c=$(BUILD_DIR)/%.o) $(BUILD_DIR)/n64/ugfx/rsp_ugfx.o
 
-
-$(PROG_NAME).z64: N64_ROM_TITLE="$(PROG_NAME)"
+$(PROG_NAME).z64: PROG_NAME="$(PROG_NAME)"
 $(PROG_NAME).z64: $(BUILD_DIR)/$(PROG_NAME).dfs
-
-ed64patch:
-	@mkdir -p $(dir $@)
-	@$(N64_ROOTDIR)/bin/ed64romconfig --savetype sram768k $(PROG_NAME).z64
-	@echo "    [ED64] $(PROG_NAME).z64"
 
 clean:
 	rm -rf $(BUILD_DIR) $(PROG_NAME).z64 $(ASSETS_CONV)
