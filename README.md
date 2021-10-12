@@ -23,14 +23,11 @@ The other 2 episodes are supported, however need files from the original game:
 * Copy Keen 6 V1.5 files `AUDIO.CK6`, `EGAGRAPH.CK6` and `GAMEMAPS.CK6` into `filesystem/CK6` and recompile to play episode 6.
 
 ## Build
-This was developed using the opensource N64 toolchain [libdragon](https://github.com/DragonMinded/libdragon). I developed it using the official docker container. The build process is something like this:
+This was developed using the opensource N64 toolchain [libdragon](https://github.com/DragonMinded/libdragon). I developed it using the official docker container. The build process is something like this (after setting up the docker image as per the instructions):
 ```
-apt-get install npm docker.io
 git clone --recursive https://github.com/Ryzee119/Omnispeak64.git
 cd Omnispeak64
-npm install -g libdragon
-libdragon download
-libdragon start
+libdragon init
 
 #Build Episode 4 (The shareware game files are already in the filesystem/CK4 folder)
 libdragon make EP=4
