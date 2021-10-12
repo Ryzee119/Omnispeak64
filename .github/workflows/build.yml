@@ -31,6 +31,7 @@ jobs:
            tar xvzf libdragon-linux-x86_64.tar.gz
            mv libdragon _libdragon
            sudo chmod +x _libdragon
+           rm libdragon-linux-x86_64.tar.gz
            ./_libdragon init
 
     - name: Compile
