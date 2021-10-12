@@ -38,10 +38,10 @@ static sram_files_t sram_files[MAX_SRAM_FILES] = {
 
 int main(void)
 {
+    init_interrupts();
     debug_init(DEBUG_FEATURE_LOG_ISVIEWER);
     dfs_init(DFS_DEFAULT_LOCATION);
     sramfs_init(sram_files, MAX_SRAM_FILES);
-    init_interrupts();
     timer_init();
 
     FS_Startup();

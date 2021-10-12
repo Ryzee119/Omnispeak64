@@ -57,7 +57,6 @@ static void IN_N64_WaitKey()
 
 static void IN_N64_Startup(bool disableJoysticks)
 {
-    init_interrupts();
     controller_init();
     IN_SetControlType(0, IN_ctrl_Joystick1);
     IN_SetJoyConf(IN_joy_jump, 0);

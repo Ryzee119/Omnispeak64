@@ -27,6 +27,16 @@ uint16_t *palette;
 uint8_t pal_slot = 1;
 static bool palette_dirty = false;
 
+static void _do_audio_update()
+{
+    if (audio_can_write())
+    {
+        short *buf = audio_write_begin();
+        mixer_poll(buf, audio_get_buffer_length());
+        audio_write_end();
+    }
+}
+
 static void VL_N64_SetVideoMode(int mode)
 {
     if (mode == 0xD)
@@ -87,6 +97,7 @@ static void VL_N64_GetSurfaceDimensions(void *surface, int *w, int *h)
 
 static void VL_N64_RefreshPaletteAndBorderColor(void *screen)
 {
+    _do_audio_update();
     uint8_t r, g, b;
     r = VL_EGARGBColorTable[vl_emuegavgaadapter.bordercolor][0];
     g = VL_EGARGBColorTable[vl_emuegavgaadapter.bordercolor][1];
@@ -107,12 +118,14 @@ static void VL_N64_RefreshPaletteAndBorderColor(void *screen)
 
 static int VL_N64_SurfacePGet(void *surface, int x, int y)
 {
+    _do_audio_update();
     VL_N64_Surface *surf = (VL_N64_Surface *)surface;
     return ((uint8_t *)surf->pixels)[y * surf->width + x];
 }
 
 static void VL_N64_SurfaceRect(void *dst_surface, int x, int y, int w, int h, int colour)
 {
+    _do_audio_update();
     VL_N64_Surface *surf = (VL_N64_Surface *)dst_surface;
 #if 0
     //This mostly works but glitches out in the intro scenes? (There's a min rect size, 4bytes?, also a max too?)
@@ -139,6 +152,7 @@ static void VL_N64_SurfaceRect(void *dst_surface, int x, int y, int w, int h, in
 
 static void VL_N64_SurfaceRect_PM(void *dst_surface, int x, int y, int w, int h, int colour, int mapmask)
 {
+    _do_audio_update();
     mapmask &= 0xF;
     colour &= mapmask;
 
@@ -156,6 +170,7 @@ static void VL_N64_SurfaceRect_PM(void *dst_surface, int x, int y, int w, int h,
 
 static void VL_N64_SurfaceToSurface(void *src_surface, void *dst_surface, int x, int y, int sx, int sy, int sw, int sh)
 {
+    _do_audio_update();
     VL_N64_Surface *surf = (VL_N64_Surface *)src_surface;
     VL_N64_Surface *dest = (VL_N64_Surface *)dst_surface;
     for (int _y = sy; _y < sy + sh; ++_y)
@@ -166,6 +181,7 @@ static void VL_N64_SurfaceToSurface(void *src_surface, void *dst_surface, int x,
 
 static void VL_N64_SurfaceToSelf(void *surface, int x, int y, int sx, int sy, int sw, int sh)
 {
+    _do_audio_update();
     VL_N64_Surface *srf = (VL_N64_Surface *)surface;
     bool directionX = sx > x;
     bool directionY = sy > y;
@@ -188,54 +204,63 @@ static void VL_N64_SurfaceToSelf(void *surface, int x, int y, int sx, int sy, in
 
 static void VL_N64_UnmaskedToSurface(void *src, void *dst_surface, int x, int y, int w, int h)
 {
+    _do_audio_update();
     VL_N64_Surface *surf = (VL_N64_Surface *)dst_surface;
     VL_UnmaskedToPAL8(src, surf->pixels, x, y, surf->width, w, h);
 }
 
 static void VL_N64_UnmaskedToSurface_PM(void *src, void *dst_surface, int x, int y, int w, int h, int mapmask)
 {
+    _do_audio_update();
     VL_N64_Surface *surf = (VL_N64_Surface *)dst_surface;
     VL_UnmaskedToPAL8_PM(src, surf->pixels, x, y, surf->width, w, h, mapmask);
 }
 
 static void VL_N64_MaskedToSurface(void *src, void *dst_surface, int x, int y, int w, int h)
 {
+    _do_audio_update();
     VL_N64_Surface *surf = (VL_N64_Surface *)dst_surface;
     VL_MaskedToPAL8(src, surf->pixels, x, y, surf->width, w, h);
 }
 
 static void VL_N64_MaskedBlitToSurface(void *src, void *dst_surface, int x, int y, int w, int h)
 {
+    _do_audio_update();
     VL_N64_Surface *surf = (VL_N64_Surface *)dst_surface;
     VL_MaskedBlitClipToPAL8(src, surf->pixels, x, y, surf->width, w, h, surf->width, surf->height);
 }
 
 static void VL_N64_BitToSurface(void *src, void *dst_surface, int x, int y, int w, int h, int colour)
 {
+    _do_audio_update();
     VL_N64_Surface *surf = (VL_N64_Surface *)dst_surface;
     VL_1bppToPAL8(src, surf->pixels, x, y, surf->width, w, h, colour);
 }
 
 static void VL_N64_BitToSurface_PM(void *src, void *dst_surface, int x, int y, int w, int h, int colour, int mapmask)
 {
+    _do_audio_update();
     VL_N64_Surface *surf = (VL_N64_Surface *)dst_surface;
     VL_1bppToPAL8_PM(src, surf->pixels, x, y, surf->width, w, h, colour, mapmask);
 }
 
 static void VL_N64_BitXorWithSurface(void *src, void *dst_surface, int x, int y, int w, int h, int colour)
 {
+    _do_audio_update();
     VL_N64_Surface *surf = (VL_N64_Surface *)dst_surface;
     VL_1bppXorWithPAL8(src, surf->pixels, x, y, surf->width, w, h, colour);
 }
 
 static void VL_N64_BitBlitToSurface(void *src, void *dst_surface, int x, int y, int w, int h, int colour)
 {
+    _do_audio_update();
     VL_N64_Surface *surf = (VL_N64_Surface *)dst_surface;
     VL_1bppBlitToPAL8(src, surf->pixels, x, y, surf->width, w, h, colour);
 }
 
 static void VL_N64_BitInvBlitToSurface(void *src, void *dst_surface, int x, int y, int w, int h, int colour)
 {
+    _do_audio_update();
     VL_N64_Surface *surf = (VL_N64_Surface *)dst_surface;
     VL_1bppInvBlitClipToPAL8(src, surf->pixels, x, y, surf->width, w, h, surf->width, surf->height, colour);
 }
@@ -254,6 +279,7 @@ static int VL_N64_GetNumBuffers(void *surface)
 
 static void VL_N64_ScrollSurface(void *surface, int x, int y)
 {
+    _do_audio_update();
     VL_N64_Surface *surf = (VL_N64_Surface *)surface;
     int dx = 0, dy = 0, sx = 0, sy = 0;
     int w = surf->width - CK_Cross_max(x, -x), h = surf->height - CK_Cross_max(y, -y);
@@ -282,6 +308,14 @@ static void VL_N64_ScrollSurface(void *surface, int x, int y)
 
 static void VL_N64_Present(void *surface, int scrlX, int scrlY, bool singleBuffered)
 {
+    //Finish the previous frame is still running
+    rsp_wait();
+    _do_audio_update();
+    //Wait for the RDP and show the last from on VSYNC
+    if (disp) display_show(disp);
+
+    while (!(disp = display_lock()));
+
     VL_N64_Surface *src = (VL_N64_Surface *)surface;
     data_cache_hit_writeback_invalidate(src->pixels, src->width * src->height);
 
@@ -351,19 +385,21 @@ static void VL_N64_Present(void *surface, int scrlX, int scrlY, bool singleBuffe
     data_cache_hit_writeback(ugfx_buffer_data(render_commands), ugfx_buffer_length(render_commands) * sizeof(ugfx_command_t));
     ugfx_load(ugfx_buffer_data(render_commands), ugfx_buffer_length(render_commands));
 
-    rsp_run();
-    display_show(disp);
-    while (!(disp = display_lock()));
+    rsp_run_async();
 }
 
 static void VL_N64_FlushParams()
 {
+    _do_audio_update();
 }
 
 static void VL_N64_WaitVBLs(int vbls)
 {
     long long micros = timer_ticks() + TIMER_TICKS_LL(1000000 * vbls / 60);
-    while (timer_ticks() < micros);
+    do
+    {
+        _do_audio_update();
+    } while (timer_ticks() < micros);
 }
 
 VL_Backend vl_n64_backend =

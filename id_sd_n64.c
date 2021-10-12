@@ -75,12 +75,6 @@ static void music_read(void *ctx, samplebuffer_t *sbuf, int wpos, int wlen, bool
 static void _t0service(int ovfl)
 {
     SDL_t0Service();
-    if (audio_can_write() && (*SP_STATUS & SP_STATUS_HALTED))
-    {
-        short *buf = audio_write_begin();
-        mixer_poll(buf, audio_get_buffer_length());
-        audio_write_end();
-    }
 }
 
 static void SD_N64_SetTimer0(int16_t int_8_divisor)
