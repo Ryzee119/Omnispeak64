@@ -27,7 +27,7 @@ jobs:
       run: |
            export BUILD_TAG=build-$(date -u +'%Y%m%d%H%M')
            echo "BUILD_TAG=$BUILD_TAG" >> $GITHUB_ENV
-           wget https://github.com/anacierdem/libdragon-docker/releases/download/v10.2.0/libdragon-linux-x86_64.tar.gz
+           wget https://github.com/anacierdem/libdragon-docker/releases/download/v10.6.0/libdragon-linux-x86_64.tar.gz
            tar xvzf libdragon-linux-x86_64.tar.gz
            mv libdragon _libdragon
            sudo chmod +x _libdragon
