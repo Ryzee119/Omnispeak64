@@ -12,8 +12,8 @@ N64_ROM_SAVETYPE = sram768k
 N64_ROM_REGIONFREE = true
 
 N64_CFLAGS += -Wno-error #Disable -Werror from n64.mk
-CFLAGS += -I$(OMNI_DIR) -DEP$(EP) -In64/ugfx -D_CONSOLE
-CFLAGS += -DFS_DEFAULT_KEEN_PATH='"rom:/"' -DFS_DEFAULT_USER_PATH='"sram:/"'
+CFLAGS += -I$(OMNI_DIR) -DEP$(EP) -D_CONSOLE
+CFLAGS += -DFS_DEFAULT_KEEN_PATH='"rom:/"' -DFS_DEFAULT_USER_PATH='"sram:/"' -DALWAYS_REDRAW -O2
 
 SRCS = \
 	n64_main.c \
@@ -21,7 +21,6 @@ SRCS = \
 	id_sd_n64.c \
 	id_vl_n64.c \
 	id_fs_n64.c \
-	n64/ugfx/ugfx.c \
 	$(OMNI_DIR)/id_fs.c \
 	$(OMNI_DIR)/opl/dbopl.c \
 	$(OMNI_DIR)/ck_act.c \
@@ -70,7 +69,7 @@ SRCS = \
 all: $(PROG_NAME).z64
 
 $(BUILD_DIR)/$(PROG_NAME).dfs: $(wildcard filesystem/CK$(EP)/*)
-$(BUILD_DIR)/$(PROG_NAME).elf: $(SRCS:%.c=$(BUILD_DIR)/%.o) $(BUILD_DIR)/n64/ugfx/rsp_ugfx.o
+$(BUILD_DIR)/$(PROG_NAME).elf: $(SRCS:%.c=$(BUILD_DIR)/%.o)
 
 $(PROG_NAME).z64: PROG_NAME="$(PROG_NAME)"
 $(PROG_NAME).z64: $(BUILD_DIR)/$(PROG_NAME).dfs
