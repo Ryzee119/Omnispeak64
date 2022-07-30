@@ -4,7 +4,7 @@
 #include <malloc.h>
 #include <string.h>
 #include <libdragon.h>
-#include "ugfx.h"
+#include "rdp.h"
 
 #include "id_vl.h"
 #include "id_vl_private.h"
@@ -18,7 +18,6 @@ typedef struct VL_N64_Surface
 } VL_N64_Surface;
 
 static display_context_t disp = 0;
-static ugfx_buffer_t *render_commands;
 static uint32_t display_width;
 static uint32_t display_height;
 static uint32_t border_colour = 0xFFFFFFFF;
@@ -42,21 +41,18 @@ static void VL_N64_SetVideoMode(int mode)
     if (mode == 0xD)
     {
         display_init(RESOLUTION_320x240, DEPTH_16_BPP, 2, GAMMA_NONE, ANTIALIAS_RESAMPLE_FETCH_ALWAYS);
-        ugfx_init(UGFX_DEFAULT_RDP_BUFFER_SIZE);
+        rdp_init();
+        rdpq_set_fill_color(RGBA32(0,0,0,255));
 
         display_width = 320;
         display_height = 240;
-
-        render_commands = ugfx_buffer_new(2048);
-        assert(render_commands != NULL);
 
         palette = (uint16_t *)memalign(64, sizeof(uint16_t) * 16);
         assert(palette != NULL);
     }
     else
     {
-        ugfx_close();
-        ugfx_buffer_free(render_commands);
+        rdp_close();
         free(palette);
     }
 }
@@ -127,27 +123,10 @@ static void VL_N64_SurfaceRect(void *dst_surface, int x, int y, int w, int h, in
 {
     _do_audio_update();
     VL_N64_Surface *surf = (VL_N64_Surface *)dst_surface;
-#if 0
-    //This mostly works but glitches out in the intro scenes? (There's a min rect size, 4bytes?, also a max too?)
-    uint32_t _colour = (colour & 0xFF) << 24 | (colour & 0xFF) << 16 | (colour & 0xFF) << 8 | (colour & 0xFF);
-    data_cache_hit_writeback_invalidate(surf->pixels, surf->width * surf->height);
-    rdl_push(dl,
-             RdpSetColorImage(RDP_TILE_FORMAT_INDEX, RDP_TILE_SIZE_8BIT, surf->width, (uint32_t)surf->pixels),
-             RdpSetClippingI(0, 0, surf->width, surf->height),
-             RdpSyncPipe(),
-             RdpSetOtherModes(SOM_CYCLE_FILL),
-             RdpSetFillColor(_colour), 
-             RdpFillRectangleI(x, y, x + w, y + h)
-    );
-    rdl_flush(dl);
-    rdl_exec(dl);
-    rdl_reset(dl);
-#else
     for (int _y = y; _y < y + h; ++_y)
     {
         memset(((uint8_t *)surf->pixels) + (_y * surf->width) + x, colour, CK_Cross_min(w, surf->width - x));
     }
-#endif
 }
 
 static void VL_N64_SurfaceRect_PM(void *dst_surface, int x, int y, int w, int h, int colour, int mapmask)
@@ -267,8 +246,9 @@ static void VL_N64_BitInvBlitToSurface(void *src, void *dst_surface, int x, int 
 
 static int VL_N64_GetActiveBufferId(void *surface)
 {
+    static int d = 0;
     (void)surface;
-    return disp - 1;
+    return d^=1;
 }
 
 static int VL_N64_GetNumBuffers(void *surface)
@@ -308,84 +288,75 @@ static void VL_N64_ScrollSurface(void *surface, int x, int y)
 
 static void VL_N64_Present(void *surface, int scrlX, int scrlY, bool singleBuffered)
 {
-    //Finish the previous frame is still running
-    rsp_wait();
     _do_audio_update();
-    //Wait for the RDP and show the last from on VSYNC
-    if (disp) display_show(disp);
-
-    while (!(disp = display_lock()));
 
     VL_N64_Surface *src = (VL_N64_Surface *)surface;
     data_cache_hit_writeback_invalidate(src->pixels, src->width * src->height);
 
-    //We draw the screen from top to bottom.
-    //We can only draw 2048bytes per loop and for simplicity we want it to be a multiple
-    //of the width.
+    // We draw the screen from top to bottom.
+    // We can only draw 2048bytes per loop and for simplicity we want it to be a multiple
+    // of the width.
     int x_per_loop = src->width;
-    int y_per_loop = (2048 / src->width) >=5 ? 5 : 1;
+    int y_per_loop = (2048 / src->width) >= 5 ? 5 : 1;
     int current_y = 0;
     int chunk_size = x_per_loop * y_per_loop;
     assert(chunk_size <= 2048);
 
-    ugfx_buffer_clear(render_commands);
-    ugfx_buffer_push(render_commands, ugfx_set_display(disp));
-    ugfx_buffer_push(render_commands, ugfx_set_scissor(0, 0, display_width << 2, display_height << 2, UGFX_SCISSOR_DEFAULT));
-    ugfx_buffer_push(render_commands, ugfx_set_other_modes(UGFX_CYCLE_COPY | UGFX_TLUT_RGBA16));
-    ugfx_buffer_push(render_commands, ugfx_sync_pipe());
+    #define INDEX_TEX_TILE 0
+    #define RGB_TEX_TILE 1
+    #define PALETTE_TILE 2
+    #define PALETTE_SLOT 1
 
+    disp = display_lock();
+    if (!disp)
+    {
+        return;
+    }
+
+    rdp_attach(disp);
+    rdpq_set_scissor(0, 0, display_width, display_height);
+    rdpq_set_other_modes_raw(SOM_CYCLE_COPY | SOM_ENABLE_TLUT_RGB16);
+
+    // Load palette into PALETTE_TILE
     if (palette_dirty)
     {
-        ugfx_buffer_push(render_commands, ugfx_set_tile(UGFX_FORMAT_INDEX, UGFX_PIXEL_SIZE_4B, 16, 0x800 + (pal_slot * 0x100), 2, 0, 0, 0, 0, 0, 0, 0, 0, 0));
-        ugfx_buffer_push(render_commands, ugfx_set_texture_image((uint32_t)palette, UGFX_FORMAT_INDEX, UGFX_PIXEL_SIZE_16B, 16 - 1));
-        ugfx_buffer_push(render_commands, ugfx_load_tlut(0 << 2, 0, 15 << 2, 0, 2));
-        ugfx_buffer_push(render_commands, ugfx_sync_tile());
+        rdpq_set_tile(PALETTE_TILE, FMT_CI4, (PALETTE_SLOT * 0x100) * 8, 16, 0);
+        rdpq_set_texture_image(palette, FMT_RGBA16, 16);
+        rdpq_load_tlut(PALETTE_TILE, 0, 15);
         palette_dirty = false;
     }
 
     uint8_t *ptr = src->pixels + scrlY * x_per_loop;
     while (current_y < 240)
     {
-        //Load the 8bit texture into tile 0:
-        ugfx_buffer_push(render_commands, ugfx_set_tile(UGFX_FORMAT_INDEX, UGFX_PIXEL_SIZE_8B, x_per_loop / 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0));
-        ugfx_buffer_push(render_commands, ugfx_set_texture_image((uint32_t)ptr, UGFX_FORMAT_INDEX, UGFX_PIXEL_SIZE_8B, x_per_loop - 1));
-        ugfx_buffer_push(render_commands, ugfx_load_tile(0 << 2, 0 << 2, (x_per_loop - 1) << 2, (y_per_loop - 1) << 2, 0));
-        ugfx_buffer_push(render_commands, ugfx_sync_tile());
+        // Load the 8bit indexed texture into INDEX_TEX_TILE:
+        rdpq_set_tile(INDEX_TEX_TILE, FMT_CI8, 0x0000, x_per_loop, 0);
+        rdpq_set_texture_image(ptr, FMT_CI8, x_per_loop);
+        rdpq_load_tile(INDEX_TEX_TILE, 0, 0, x_per_loop, y_per_loop);
 
-        //Apply the palette onto the loaded tile, then set it to tile 1:
-        ugfx_buffer_push(render_commands, ugfx_set_tile(UGFX_FORMAT_INDEX, UGFX_PIXEL_SIZE_8B, x_per_loop / 8, 0, 1, pal_slot, 0, 0, 0, 0, 0, 0, 0, 0));
-        ugfx_buffer_push(render_commands, ugfx_set_tile_size(0, 0, (x_per_loop - 1) << 2, (y_per_loop - 1) << 2, 1));
+        // Apply the palette onto INDEX_TEX_TILE, which will be loaded into tile RGB_TEX_TILE:
+        rdpq_set_tile(RGB_TEX_TILE, FMT_CI8, 0x0000, x_per_loop, PALETTE_SLOT); 
+        rdpq_set_tile_size(RGB_TEX_TILE, 0, 0, x_per_loop, y_per_loop);
 
-        //Draw a line from tile 1
-        ugfx_buffer_push(render_commands, ugfx_texture_rectangle(1, 0 << 2, current_y << 2, x_per_loop << 2, (current_y + 1) << 2));
-        ugfx_buffer_push(render_commands, ugfx_texture_rectangle_tcoords(scrlX << 5, 0 << 5, 4 << 10, 1 << 10));
+        // Draw a line from RGB_TEX_TILE
+        rdpq_texture_rectangle(RGB_TEX_TILE, 0, current_y, x_per_loop, (current_y + 1), scrlX, 0, 1, 1);
 
         if (y_per_loop == 5)
         {
             current_y++;
-            //Can draw 5 lines at once at this games standard surface width, note the 1st line is drawn twice so that over 200 lines it is scaled to 240)
-            ugfx_buffer_push(render_commands, ugfx_texture_rectangle(1, 0 << 2, current_y << 2, x_per_loop << 2, (current_y + y_per_loop - 1) << 2));
-            ugfx_buffer_push(render_commands, ugfx_texture_rectangle_tcoords(scrlX << 5, 0 << 5, 4 << 10, 1 << 10));
+            rdpq_texture_rectangle(RGB_TEX_TILE, 0, current_y, x_per_loop, (current_y + y_per_loop), scrlX, 0, 1, 1);
         }
         else if (current_y % 5 == 0)
         {
             current_y++;
-            ugfx_buffer_push(render_commands, ugfx_texture_rectangle(1, 0 << 2, current_y << 2, x_per_loop << 2, (current_y + 1) << 2));
-            ugfx_buffer_push(render_commands, ugfx_texture_rectangle_tcoords(scrlX << 5, 0 << 5, 4 << 10, 1 << 10));
+            rdpq_texture_rectangle(RGB_TEX_TILE, 0, current_y, x_per_loop, (current_y + 1), scrlX, 0, 1, 1);
         }
 
         current_y += y_per_loop;
         ptr += chunk_size;
     }
 
-    ugfx_buffer_push(render_commands, ugfx_sync_pipe());
-    ugfx_buffer_push(render_commands, ugfx_sync_full());
-    ugfx_buffer_push(render_commands, ugfx_finalize());
-
-    data_cache_hit_writeback(ugfx_buffer_data(render_commands), ugfx_buffer_length(render_commands) * sizeof(ugfx_command_t));
-    ugfx_load(ugfx_buffer_data(render_commands), ugfx_buffer_length(render_commands));
-
-    rsp_run_async();
+    rdp_auto_show_display(disp);
 }
 
 static void VL_N64_FlushParams()
