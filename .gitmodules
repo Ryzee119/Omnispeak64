@@ -1,3 +1,7 @@
 [submodule "omnispeak"]
 	path = omnispeak
 	url = https://github.com/Ryzee119/omnispeakX.git
+[submodule "libdragon"]
+	path = libdragon
+	url = https://github.com/DragonMinded/libdragon
+	branch = trunk
