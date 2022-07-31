@@ -302,10 +302,11 @@ static void VL_N64_Present(void *surface, int scrlX, int scrlY, bool singleBuffe
     int chunk_size = x_per_loop * y_per_loop;
     assert(chunk_size <= 2048);
 
-    #define INDEX_TEX_TILE 0
-    #define RGB_TEX_TILE 1
+    #define TEX_TILE 0
     #define PALETTE_TILE 2
-    #define PALETTE_SLOT 1
+    //Eight-bit CI textures do not use the palette number of the tile, since they address the whole 256 TLUT directly.
+    //Just make this zero
+    #define PALETTE_SLOT 0
 
     disp = display_lock();
     if (!disp)
@@ -320,7 +321,7 @@ static void VL_N64_Present(void *surface, int scrlX, int scrlY, bool singleBuffe
     // Load palette into PALETTE_TILE
     if (palette_dirty)
     {
-        rdpq_set_tile(PALETTE_TILE, FMT_CI4, (PALETTE_SLOT * 0x100) * 8, 16, 0);
+        rdpq_set_tile(PALETTE_TILE, FMT_CI4, 0x800 + (PALETTE_SLOT * 0x80), 16, 0);
         rdpq_set_texture_image(palette, FMT_RGBA16, 16);
         rdpq_load_tlut(PALETTE_TILE, 0, 15);
         palette_dirty = false;
@@ -329,27 +330,24 @@ static void VL_N64_Present(void *surface, int scrlX, int scrlY, bool singleBuffe
     uint8_t *ptr = src->pixels + scrlY * x_per_loop;
     while (current_y < 240)
     {
-        // Load the 8bit indexed texture into INDEX_TEX_TILE:
-        rdpq_set_tile(INDEX_TEX_TILE, FMT_CI8, 0x0000, x_per_loop, 0);
+        // Load the 8bit indexed texture into TEX_TILE with the associated palette
+        rdpq_set_tile(TEX_TILE, FMT_CI8, 0x0000, x_per_loop, PALETTE_SLOT);
         rdpq_set_texture_image(ptr, FMT_CI8, x_per_loop);
-        rdpq_load_tile(INDEX_TEX_TILE, 0, 0, x_per_loop, y_per_loop);
-
-        // Apply the palette onto INDEX_TEX_TILE, which will be loaded into tile RGB_TEX_TILE:
-        rdpq_set_tile(RGB_TEX_TILE, FMT_CI8, 0x0000, x_per_loop, PALETTE_SLOT); 
-        rdpq_set_tile_size(RGB_TEX_TILE, 0, 0, x_per_loop, y_per_loop);
+        rdpq_load_tile(TEX_TILE, 0, 0, x_per_loop, y_per_loop);
 
         // Draw a line from RGB_TEX_TILE
-        rdpq_texture_rectangle(RGB_TEX_TILE, 0, current_y, x_per_loop, (current_y + 1), scrlX, 0, 1, 1);
+        rdpq_texture_rectangle(TEX_TILE, 0, current_y, x_per_loop, (current_y + 1), scrlX, 0, 1, 1);
 
+        // Standard framebuffer is 200px high, we scale to 240 by adding another line every 5 rows
         if (y_per_loop == 5)
         {
             current_y++;
-            rdpq_texture_rectangle(RGB_TEX_TILE, 0, current_y, x_per_loop, (current_y + y_per_loop), scrlX, 0, 1, 1);
+            rdpq_texture_rectangle(TEX_TILE, 0, current_y, x_per_loop, (current_y + y_per_loop), scrlX, 0, 1, 1);
         }
         else if (current_y % 5 == 0)
         {
             current_y++;
-            rdpq_texture_rectangle(RGB_TEX_TILE, 0, current_y, x_per_loop, (current_y + 1), scrlX, 0, 1, 1);
+            rdpq_texture_rectangle(TEX_TILE, 0, current_y, x_per_loop, (current_y + 1), scrlX, 0, 1, 1);
         }
 
         current_y += y_per_loop;
