@@ -5,12 +5,12 @@
 #include <malloc.h>
 #include <fcntl.h>
 #include <system.h>
-#include "n64/regsinternal.h"
 #include "id_fs.h"
 
 static const uint32_t SRAM_MAGIC = 0x64646464;
 #define SRAMFS_MIN(a,b) (((a)<(b))?(a):(b))
 #define SRAMFS_MAX(a,b) (((a)>(b))?(a):(b))
+#define SRAM_BASE (0x08000000)
 
 FS_File FSL_OpenFileInDirCaseInsensitive(const char *dirPath, const char *fileName, bool forWrite)
 {
@@ -73,37 +73,7 @@ static int sram_get_file_start_by_handle(int handle)
     return offset;
 }
 
-uint8_t __attribute__((aligned(16))) sector_cache[16];
-static volatile struct PI_regs_s * const PI_regs = (struct PI_regs_s *)0xa4600000;
-static void _dma_read(void * ram_address, unsigned long pi_address, unsigned long len) 
-{
-    disable_interrupts();
-    dma_wait();
-    MEMORY_BARRIER();
-    PI_regs->ram_address = ram_address;
-    MEMORY_BARRIER();
-    PI_regs->pi_address = pi_address;
-    MEMORY_BARRIER();
-    PI_regs->write_length = len-1;
-    MEMORY_BARRIER();
-    dma_wait();
-    enable_interrupts();
-}
-
-static void _dma_write(void * ram_address, unsigned long pi_address, unsigned long len) 
-{
-    disable_interrupts();
-    dma_wait();
-    MEMORY_BARRIER();
-    PI_regs->ram_address = (void*)ram_address;
-    MEMORY_BARRIER();
-    PI_regs->pi_address = pi_address;
-    MEMORY_BARRIER();
-    PI_regs->read_length = len-1;
-    MEMORY_BARRIER();
-    dma_wait();
-    enable_interrupts();
-}
+uint8_t *sector_cache;
 
 //Reading and writing to SRAM via DMA must occur from a 16 bytes aligned buffer. For Omnispeak, the save file
 //can be greater than 1 SRAM bank (32kB), so I need to be able to manage access multiple banks contiguously from non aligned buffers at random lengths.
@@ -113,32 +83,14 @@ static void read_sram(uint8_t *dst, uint32_t offset, int len)
     assert(offset + len < 0x18000);
 
     uint32_t aligned_offset;
-    uint32_t banked_offset;
     while (len > 0)
     {
         //Make sure we're on a 32bit boundary in a 16 byte sector
         aligned_offset = offset - (offset % 4);
         aligned_offset = aligned_offset - (aligned_offset % 16);
 
-        //Select the right bank
-        if (aligned_offset > 0xFFFF)
-        {
-            banked_offset = aligned_offset - (0xFFFF + 1);
-            banked_offset |= (2 << 18);
-        }
-        else if (aligned_offset > 0x7FFF)
-        {
-            banked_offset = aligned_offset - (0x7FFF + 1);
-            banked_offset |= (1 << 18);
-        }
-        else
-        {
-            banked_offset = aligned_offset;
-        }
-
         //Read a sector of data from SRAM
-        _dma_read(sector_cache, 0x08000000 + (banked_offset & 0x07FFFFFF), 16);
-        data_cache_hit_writeback_invalidate(sector_cache, 16);
+        dma_read_raw_async(sector_cache, SRAM_BASE + aligned_offset, 16); 
 
         //Copy only the required bytes into the dst buffer
         int br = SRAMFS_MIN(len, 16 - (offset - aligned_offset));
@@ -155,41 +107,22 @@ static void write_sram(uint8_t *src, uint32_t offset, int len)
     assert(offset + len < 0x18000);
 
     uint32_t aligned_offset;
-    uint32_t banked_offset;
     while (len > 0)
     {
         //Make sure we're on a 32bit boundary in a 16 byte sector
         aligned_offset = offset - (offset % 4);
         aligned_offset = aligned_offset - (aligned_offset % 16);
 
-        //Select the right bank
-        if (aligned_offset > 0xFFFF)
-        {
-            banked_offset = aligned_offset - (0xFFFF + 1);
-            banked_offset |= (2 << 18);
-        }
-        else if (aligned_offset > 0x7FFF)
-        {
-            banked_offset = aligned_offset - (0x7FFF + 1);
-            banked_offset |= (1 << 18);
-        }
-        else
-        {
-            banked_offset = aligned_offset;
-        }
-
         //Read a sector of data from SRAM if writing to an unaligned sector
         //Can skip this read/modify/write if we're aligned and atleast 16 byte.
         if (len < 16 || (offset - aligned_offset) != 0)
         {
-            _dma_read(sector_cache, 0x08000000 + (banked_offset & 0x07FFFFFF), 16);
-            data_cache_hit_writeback_invalidate(sector_cache, 16);
+            dma_read_raw_async(sector_cache, SRAM_BASE + aligned_offset, 16); 
         }
 
         int bw = SRAMFS_MIN(len, 16 - (offset - aligned_offset));
         memcpy(sector_cache + (offset - aligned_offset), src, bw);
-        data_cache_hit_writeback_invalidate(sector_cache, 16);
-        _dma_write(sector_cache, 0x08000000 + (banked_offset & 0x07FFFFFF), 16);
+        dma_write_raw_async(sector_cache, SRAM_BASE + aligned_offset, 16); 
 
         src += bw;
         offset += bw;
@@ -208,7 +141,7 @@ static void *__open(char *name, int flags)
 
     int offset = sram_get_file_start_by_handle(handle);
     int magic;
-    read_sram((uint8_t *)&magic, offset, 4);
+    read_sram((uint8_t *)&magic, offset, sizeof(SRAM_MAGIC));
 
     //File is meant to be ready only, see if it exists by reading the first few bytes
     //to see if the magic number is present.
@@ -223,8 +156,10 @@ static void *__open(char *name, int flags)
         //Write the magic number then return handle to the file, then zero the remainder
         magic = SRAM_MAGIC;
         write_sram((uint8_t *)&magic, offset, sizeof(SRAM_MAGIC));
+        magic = 0;
+        read_sram((uint8_t *)&magic, offset, sizeof(SRAM_MAGIC));
+        assert(magic == SRAM_MAGIC);
         uint8_t zero[16] = {0};
-        data_cache_hit_writeback_invalidate(zero, 16);
         int remaining = sram_files[handle].size - sizeof(SRAM_MAGIC);
         int pos = 0;
         while(remaining)
@@ -332,6 +267,7 @@ int sramfs_init(sram_files_t *files, int num_files)
     assert(num_files > 0);
 
     sram_files = malloc(sizeof(sram_files_t) * (num_files + 1));
+    sector_cache = malloc_uncached_aligned(16, 16);
     assert(sram_files != NULL);
     memcpy(&sram_files[1], files, sizeof(sram_files_t) * num_files);
     sram_num_files = num_files;
