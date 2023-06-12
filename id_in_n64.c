@@ -163,7 +163,7 @@ static const char *IN_N64_JoyGetName(int joystick)
     return "N64 Joystick";
 }
 
-static const char IN_N64_GetButtonName(int joystick, int index)
+static const char *IN_N64_GetButtonName(int joystick, int index)
 {
     return "No Name";
 }
