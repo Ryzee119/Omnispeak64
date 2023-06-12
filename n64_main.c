@@ -63,7 +63,6 @@ int main(void)
     CK_InitGame();
 
     in_controlType = IN_ctrl_Joystick1;
-    vl_noPan = true;
 
     while (1)
     {
