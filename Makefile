@@ -8,12 +8,12 @@ OMNI_DIR = omnispeak/src
 include $(N64_INST)/include/n64.mk
 
 PROG_NAME = omnispeak64_ep$(EP)
-N64_ROM_SAVETYPE = sram768k
+N64_ROM_SAVETYPE = sram1m
 N64_ROM_REGIONFREE = true
 
 N64_CFLAGS += -Wno-error #Disable -Werror from n64.mk
 CFLAGS += -I$(OMNI_DIR) -DEP$(EP) -D_CONSOLE
-CFLAGS += -DFS_DEFAULT_KEEN_PATH='"rom:/"' -DFS_DEFAULT_USER_PATH='"sram:/"' -DALWAYS_REDRAW -O2
+CFLAGS += -DFS_DEFAULT_KEEN_PATH='"rom:/"' -DFS_DEFAULT_USER_PATH='"sram:/"' -DALWAYS_REDRAW -O2 -DNDEBUG
 
 SRCS = \
 	n64_main.c \
