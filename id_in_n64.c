@@ -163,6 +163,21 @@ static const char *IN_N64_JoyGetName(int joystick)
     return "N64 Joystick";
 }
 
+static const char IN_N64_GetButtonName(int joystick, int index)
+{
+    return "No Name";
+}
+
+static void IN_N64_StartTextInput(const char *reason, const char *oldText)
+{
+
+}
+
+static void IN_N64_StopTextInput()
+{
+
+}
+
 static IN_Backend in_n64_backend = {
     .startup = IN_N64_Startup,
     .shutdown = 0,
@@ -174,8 +189,12 @@ static IN_Backend in_n64_backend = {
     .joyGetAbs = IN_N64_JoyGetAbs,
     .joyGetButtons = IN_N64_JoyGetButtons,
     .joyGetName = IN_N64_JoyGetName,
+    .joyGetButtonName = IN_N64_GetButtonName,
+    .startTextInput = IN_N64_StartTextInput,
+    .stopTextInput = IN_N64_StopTextInput,
     .joyAxisMin = -32767,
     .joyAxisMax = 32768,
+    .supportsTextEvents = false
 };
 
 IN_Backend *IN_Impl_GetBackend()
