@@ -51,6 +51,16 @@ static bool SD_N64_AudioSubsystem_Up = false;
 static timer_link_t *t0_timer;
 void SDL_t0Service(void);
 
+static inline void _do_audio_update()
+{
+    if (audio_can_write())
+    {
+        short *buf = audio_write_begin();
+        mixer_poll(buf, audio_get_buffer_length());
+        audio_write_end();
+    }
+}
+
 static void music_read(void *ctx, samplebuffer_t *sbuf, int wpos, int wlen, bool seeking)
 {
     (void)ctx;
@@ -132,33 +142,17 @@ static void SD_N64_Shutdown(void)
 
 static void SD_N64_Lock()
 {
-    if (SD_N64_IsLocked)
-    {
-        return;
-    }
     SD_N64_IsLocked = true;
 }
 
 static void SD_N64_Unlock()
 {
-    if (!SD_N64_IsLocked)
-    {
-        return;
-    }
     SD_N64_IsLocked = false;
 }
 
-void N64_LoadSound(int16_t sound)
+void SD_N64_WaitTick()
 {
-}
-
-void N64_PlayMusic(int16_t song)
-{
-}
-
-void N64_PlaySound(int16_t sound)
-{
-
+    _do_audio_update();
 }
 
 static SD_Backend sd_n64_backend = {
@@ -168,7 +162,8 @@ static SD_Backend sd_n64_backend = {
     .unlock = SD_N64_Unlock,
     .alOut = SD_N64_alOut,
     .pcSpkOn = SD_N64_PCSpkOn,
-    .setTimer0 = SD_N64_SetTimer0
+    .setTimer0 = SD_N64_SetTimer0,
+    .waitTick = SD_N64_WaitTick
 };
 
 SD_Backend *SD_Impl_GetBackend()
