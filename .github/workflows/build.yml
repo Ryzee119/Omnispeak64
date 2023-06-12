@@ -29,7 +29,7 @@ jobs:
            echo "BUILD_TAG=$BUILD_TAG" >> $GITHUB_ENV
            mkdir __libdragon
            cd __libdragon
-           wget https://github.com/anacierdem/libdragon-docker/releases/download/v10.8.0/libdragon-linux-x86_64.tar.gz
+           wget https://github.com/anacierdem/libdragon-docker/releases/download/v10.9.1/libdragon-linux-x86_64.tar.gz
            tar xvzf libdragon-linux-x86_64.tar.gz
            mv libdragon ../_libdragon
            cd ..
