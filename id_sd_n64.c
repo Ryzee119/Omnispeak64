@@ -33,7 +33,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
 #define ADLIB_NUM_CHANNELS 1
 #define ADLIB_BYTES_PER_SAMPLE 2
-#define ADLIB_SAMPLE_RATE 19200
+#define ADLIB_SAMPLE_RATE 11025
 #define ADLIB_MIXER_CHANNEL 0
 
 extern bool sd_musicStarted;
@@ -42,7 +42,7 @@ static waveform_t music;
 static Chip oplChip;
 
 static const int PC_PIT_RATE = 1193182;
-static const int AUDIO_BITRATE = 19200;
+static const int AUDIO_BITRATE = 11025;
 
 static bool SD_N64_IsLocked = false;
 static bool SD_N64_AudioSubsystem_Up = false;
@@ -81,8 +81,8 @@ static void SD_N64_SetTimer0(int16_t int_8_divisor)
 {
     //Create an interrupt that occurs at a certain frequency.
     uint16_t ints_per_sec = PC_PIT_RATE / int_8_divisor;
-    delete_timer(t0_timer);
-    t0_timer = new_timer(TIMER_TICKS(1000000 / ints_per_sec), TF_CONTINUOUS, _t0service);
+    stop_timer(t0_timer);
+    start_timer(t0_timer, TIMER_TICKS(1000000 / ints_per_sec), TF_CONTINUOUS, _t0service);
 }
 
 static void SD_N64_alOut(uint8_t reg, uint8_t val)
@@ -102,7 +102,8 @@ static void SD_N64_Startup(void)
     }
 
     audio_init(AUDIO_BITRATE, 2);
-    mixer_init(16);
+    mixer_init(1);
+    t0_timer = new_timer(0, TF_DISABLED, _t0service);
 
     //Init adlib engine for music
     DBOPL_InitTables();
