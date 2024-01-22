@@ -38,7 +38,9 @@ jobs:
 
     - name: Compile
       run: |
-           ./_libdragon make EP=4
+           ./_libdragon make -j -B EP=4
+           ./_libdragon make -j -B EP=5
+           ./_libdragon make -j -B EP=6
            cp omnispeak/LICENSE LICENSE
 
     - if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
