@@ -1,5 +1,16 @@
 #include <libdragon.h>
+#include "id_ca.h"
+#include "id_fs.h"
+#include "id_in.h"
+#include "id_mm.h"
+#include "id_rf.h"
+#include "id_us.h"
+#include "id_vl.h"
 #include "ck_act.h"
+#include "ck_cross.h"
+#include "ck_def.h"
+#include "ck_game.h"
+#include "ck_play.h"
 #include "ck4_ep.h"
 #include "ck5_ep.h"
 #include "ck6_ep.h"
@@ -21,18 +32,18 @@ int sramfs_init(sram_files_t *files, int num_files);
 #define MAX_SRAM_FILES 2
 #ifdef EP4
 static sram_files_t sram_files[MAX_SRAM_FILES] = {
-    {"CONFIG.CK4", 2048, 0},
-    {"SAVEGAM0.CK4", 98304 - 4096, 0},
+    {"OMNISPK.CFG", 2048, 0},
+    {"SAVEGAM0.CK4", 131072 - 2048, 0},
 };
 #elif EP5
 static sram_files_t sram_files[MAX_SRAM_FILES] = {
-    {"CONFIG.CK5", 2048, 0},
-    {"SAVEGAM0.CK5", 98304 - 4096, 0},
+    {"OMNISPK.CFG", 2048, 0},
+    {"SAVEGAM0.CK5", 131072 - 2048, 0},
 };
 #elif EP6
 static sram_files_t sram_files[MAX_SRAM_FILES] = {
-    {"CONFIG.CK6", 2048, 0},
-    {"SAVEGAM0.CK6", 98304 - 4096, 0},
+    {"OMNISPK.CFG", 2048, 0},
+    {"SAVEGAM0.CK6", 131072 - 2048, 0},
 };
 #endif
 
@@ -52,15 +63,14 @@ int main(void)
 #elif EP5
     ck_currentEpisode = &ck5_episode;
 #elif EP6
-    ck_currentEpisode = &ck6v15e_episode;
+    ck_currentEpisode = &ck6_episode;
 #else
     #error Error: EP4, EP5 or EP6 not defined.
 #endif
 
-    ck_currentEpisode->defineConstants();
+    CK_InitGame();
     ck_currentEpisode->hasCreatureQuestion = false;
 
-    CK_InitGame();
 
     in_controlType = IN_ctrl_Joystick1;
 
