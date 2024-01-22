@@ -25,29 +25,25 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
 static void IN_N64_PumpEvents()
 {
-    controller_scan();
+    joypad_buttons_t keys;
+    joypad_poll();
 
-    //There's a few joystick buttons that need to be injected as keypressed
-    struct controller_data keys;
-    keys = get_keys_down();
+    //There's a few joystick buttons that need to be injected as keypresses
+    keys = joypad_get_buttons_pressed(JOYPAD_PORT_1);
+    if (keys.start)   IN_HandleKeyDown(IN_SC_Escape, 0);
+    if (keys.l)       IN_HandleKeyDown(IN_SC_Enter, 0);
+    if (keys.c_up)    IN_HandleKeyDown(IN_SC_Enter, 0);
+    if (keys.c_down)  IN_HandleKeyDown(IN_SC_Enter, 0);
+    if (keys.c_left)  IN_HandleKeyDown(IN_SC_Enter, 0);
+    if (keys.c_right) IN_HandleKeyDown(IN_SC_Enter, 0);
 
-    if(keys.c[0].err) return;
-
-    if (keys.c[0].start)   IN_HandleKeyDown(IN_SC_Escape, 0);
-    //Any of these will trigger to status menu
-    if (keys.c[0].L)       IN_HandleKeyDown(IN_SC_Enter, 0);
-    if (keys.c[0].C_up)    IN_HandleKeyDown(IN_SC_Enter, 0);
-    if (keys.c[0].C_down)  IN_HandleKeyDown(IN_SC_Enter, 0);
-    if (keys.c[0].C_left)  IN_HandleKeyDown(IN_SC_Enter, 0);
-    if (keys.c[0].C_right) IN_HandleKeyDown(IN_SC_Enter, 0);
-
-    keys = get_keys_up();
-    if (keys.c[0].start)   IN_HandleKeyUp(IN_SC_Escape, 0);
-    if (keys.c[0].L)       IN_HandleKeyUp(IN_SC_Enter, 0);
-    if (keys.c[0].C_up)    IN_HandleKeyUp(IN_SC_Enter, 0);
-    if (keys.c[0].C_down)  IN_HandleKeyUp(IN_SC_Enter, 0);
-    if (keys.c[0].C_left)  IN_HandleKeyUp(IN_SC_Enter, 0);
-    if (keys.c[0].C_right) IN_HandleKeyUp(IN_SC_Enter, 0);
+    keys = joypad_get_buttons_released(JOYPAD_PORT_1);
+    if (keys.start)   IN_HandleKeyUp(IN_SC_Escape, 0);
+    if (keys.l)       IN_HandleKeyUp(IN_SC_Enter, 0);
+    if (keys.c_up)    IN_HandleKeyUp(IN_SC_Enter, 0);
+    if (keys.c_down)  IN_HandleKeyUp(IN_SC_Enter, 0);
+    if (keys.c_left)  IN_HandleKeyUp(IN_SC_Enter, 0);
+    if (keys.c_right) IN_HandleKeyUp(IN_SC_Enter, 0);
 }
 
 static void IN_N64_WaitKey()
@@ -57,7 +53,7 @@ static void IN_N64_WaitKey()
 
 static void IN_N64_Startup(bool disableJoysticks)
 {
-    controller_init();
+    joypad_init();
     IN_SetControlType(0, IN_ctrl_Joystick1);
     IN_SetJoyConf(IN_joy_jump, 0);
     IN_SetJoyConf(IN_joy_pogo, 1);
@@ -77,51 +73,46 @@ static void IN_N64_StopJoy(int joystick)
 
 static bool IN_N64_JoyPresent(int joystick)
 {
-    int controllers = get_controllers_present();
-    int mask = (joystick == 0) ? CONTROLLER_1_INSERTED :
-               (joystick == 1) ? CONTROLLER_2_INSERTED :
-               (joystick == 2) ? CONTROLLER_3_INSERTED :
-               (joystick == 3) ? CONTROLLER_4_INSERTED : 0;
-
-    return ((controllers & mask) > 0);
+    return joypad_is_connected(joystick);
 }
 
 static void IN_N64_JoyGetAbs(int joystick, int *x, int *y)
 {
-    struct controller_data keys = get_keys_pressed();
-    int x_val = keys.c[joystick].x * 256;
-    int y_val = -keys.c[joystick].y * 256 - 1;
+    int x_val = 0, y_val = 0;
 
     //Map d-pad to analog stick too
-    switch (get_dpad_direction(joystick))
+    switch (joypad_get_direction(joystick, JOYPAD_2D_LH))
     {
-        case 0:
+        case JOYPAD_8WAY_RIGHT:
             x_val = 32767;
             break;
-        case 1:
+        case JOYPAD_8WAY_UP_RIGHT:
             x_val = 32767;
             y_val = -32768;
             break;
-        case 2:
+        case JOYPAD_8WAY_UP:
             y_val = -32768;
             break;
-        case 3:
+        case JOYPAD_8WAY_UP_LEFT:
             x_val = -32768;
             y_val = -32768;
             break;
-        case 4:
+        case JOYPAD_8WAY_LEFT:
             x_val = -32768;
             break;
-        case 5:
+        case JOYPAD_8WAY_DOWN_LEFT:
             x_val = -32768;
             y_val = 32767;
             break;
-        case 6:
+        case JOYPAD_8WAY_DOWN:
             y_val = 32767;
             break;
-        case 7:
+        case JOYPAD_8WAY_DOWN_RIGHT:
             y_val = 32767;
             x_val = 32767;
+            break;
+        case JOYPAD_8WAY_NONE:
+        default:
             break;
     }
 
@@ -138,22 +129,23 @@ static void IN_N64_JoyGetAbs(int joystick, int *x, int *y)
 static uint16_t IN_N64_JoyGetButtons(int joystick)
 {
     uint16_t mask = 0;
-    struct controller_data keys = get_keys_pressed();
-    if (IN_N64_JoyPresent(joystick) == false || keys.c[joystick].err)
+    joypad_inputs_t inputs = joypad_get_inputs(joystick);
+
+    if (IN_N64_JoyPresent(joystick) == false)
     {
         return mask;
     }
 
-    if (keys.c[joystick].A)       mask |= (1 << IN_joy_jump);
-    if (keys.c[joystick].B)       mask |= (1 << IN_joy_pogo);
-    if (keys.c[joystick].start)   mask |= (1 << IN_joy_menu);
-    if (keys.c[joystick].Z)       mask |= (1 << IN_joy_fire);
-    if (keys.c[joystick].R)       mask |= (1 << IN_joy_fire);
-    if (keys.c[joystick].L)       mask |= (1 << IN_joy_status);
-    if (keys.c[joystick].C_up)    mask |= (1 << IN_joy_status);
-    if (keys.c[joystick].C_down)  mask |= (1 << IN_joy_status);
-    if (keys.c[joystick].C_left)  mask |= (1 << IN_joy_status);
-    if (keys.c[joystick].C_right) mask |= (1 << IN_joy_status);
+    if (inputs.btn.a)       mask |= (1 << IN_joy_jump);
+    if (inputs.btn.b)       mask |= (1 << IN_joy_pogo);
+    if (inputs.btn.start)   mask |= (1 << IN_joy_menu);
+    if (inputs.btn.z)       mask |= (1 << IN_joy_fire);
+    if (inputs.btn.r)       mask |= (1 << IN_joy_fire);
+    if (inputs.btn.l)       mask |= (1 << IN_joy_status);
+    if (inputs.btn.c_up)    mask |= (1 << IN_joy_status);
+    if (inputs.btn.c_down)  mask |= (1 << IN_joy_status);
+    if (inputs.btn.c_left)  mask |= (1 << IN_joy_status);
+    if (inputs.btn.c_right) mask |= (1 << IN_joy_status);
 
     return mask;
 }
